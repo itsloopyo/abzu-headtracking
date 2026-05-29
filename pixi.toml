@@ -1,0 +1,20 @@
+[workspace]
+name = "abzu-head-tracking"
+version = "0.0.0"
+description = "Head tracking mod for ABZU using CameraUnlock shared library"
+license = "MIT"
+channels = ["conda-forge"]
+platforms = ["win-64"]
+
+[tasks]
+sync = { cmd = "git submodule update --remote cameraunlock-core" }
+setup = { cmd = "powershell -Command \"if (-not (Test-Path 'build')) { cmake -B build -G 'Visual Studio 17 2022' -A x64 } else { Write-Host 'Build directory exists' -ForegroundColor Yellow }\"" }
+build = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
+build-debug = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
+clean = { cmd = "powershell -Command \"if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }\"" }
+clean-all = { cmd = "powershell -Command \"if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; if (Test-Path 'release') { Remove-Item 'release' -Recurse -Force }\"" }
+update-deps = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/update-deps.ps1" }
+package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build"] }
+install = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 Release", depends-on = ["build"] }
+uninstall = { cmd = "cmd /c scripts\\uninstall.cmd /y" }
+release = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/release.ps1" }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <!-- Reserved for future C# components. Abzu is a C++ DLL today. -->
+  </PropertyGroup>
+</Project>

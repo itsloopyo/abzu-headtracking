@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Extract version from tag
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') {
+            Write-Host "::error::Tag '$tag' is not in the form v1.2.3"
+            exit 1
+          }
+          $version = $Matches[1]
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Release version: $version"
+
+      - name: Validate version matches CMakeLists.txt
+        shell: pwsh
+        run: |
+          $cmake = Get-Content CMakeLists.txt -Raw
+          if ($cmake -notmatch 'project\(\s*AbzuHeadTracking\s+VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)') {
+            Write-Host "::error::Could not parse VERSION from CMakeLists.txt project() declaration"
+            exit 1
+          }
+          $cmakeVersion = $Matches[1]
+          if ($cmakeVersion -ne $env:VERSION) {
+            Write-Host "::error::Tag version $($env:VERSION) does not match CMakeLists.txt version $cmakeVersion"
+            exit 1
+          }
+          Write-Host "Version match confirmed: $cmakeVersion"
+
+      - name: Configure CMake
+        shell: pwsh
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build build --config Release
+
+      - name: Package
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::Packaging failed"
+            exit 1
+          }
+
+      - name: Generate release notes
+        shell: pwsh
+        run: |
+          & cameraunlock-core/scripts/generate-release-notes.ps1 `
+            -Version $env:VERSION `
+            -ProjectName 'AbzuHeadTracking' `
+            -ArtifactPaths @('src/', 'cameraunlock-core/', 'scripts/install.cmd', 'scripts/uninstall.cmd') `
+            -OutputFile release-notes.txt
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::Release notes generation failed"
+            exit 1
+          }
+
+      - name: Find release ZIPs
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path release -Filter '*-installer.zip' -ErrorAction SilentlyContinue | Select-Object -First 1
+          $nexus = Get-ChildItem -Path release -Filter '*-nexus.zip' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $installer) {
+            Write-Host "::error::Installer ZIP not found in release/"
+            exit 1
+          }
+          if (-not $nexus) {
+            Write-Host "::error::Nexus ZIP not found in release/"
+            exit 1
+          }
+          "INSTALLER_ZIP=$($installer.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "NEXUS_ZIP=$($nexus.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Found: $($installer.Name), $($nexus.Name)"
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME `
+            --title "AbzuHeadTracking $($env:GITHUB_REF_NAME)" `
+            --notes-file release-notes.txt `
+            "$env:INSTALLER_ZIP" `
+            "$env:NEXUS_ZIP"

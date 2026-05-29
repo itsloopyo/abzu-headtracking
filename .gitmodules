@@ -1,0 +1,6 @@
+[submodule "cameraunlock-core"]
+	path = cameraunlock-core
+	url = https://github.com/itsloopyo/cameraunlock-core.git
+[submodule "extern/minhook"]
+	path = extern/minhook
+	url = https://github.com/TsudaKageyu/minhook.git
