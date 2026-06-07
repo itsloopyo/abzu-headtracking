@@ -87,6 +87,22 @@ foreach ($doc in @("README.md", "LICENSE", "CHANGELOG.md", "THIRD-PARTY-NOTICES.
     }
 }
 
+# launcher-manifest.json sits at the ZIP root - the contract lopari reads.
+# Stamp the real release version into mod_info.version (single source of
+# truth is the CMakeLists project() declaration parsed above).
+$manifestSrc = Join-Path $projectDir "launcher-manifest.json"
+if (-not (Test-Path $manifestSrc)) { throw "launcher-manifest.json not found at: $manifestSrc" }
+$manifest = Get-Content $manifestSrc -Raw | ConvertFrom-Json
+$manifest.mod_info.version = $version
+$manifestJson = $manifest | ConvertTo-Json -Depth 12
+# BOM-less UTF-8: PS 5.1 Set-Content -Encoding UTF8 prepends a BOM that trips
+# strict JSON parsers (System.Text.Json, Python json). Write raw bytes instead.
+[System.IO.File]::WriteAllText(
+    (Join-Path $ghStagingDir "launcher-manifest.json"),
+    $manifestJson,
+    (New-Object System.Text.UTF8Encoding($false)))
+Write-Host "  launcher-manifest.json (version $version)" -ForegroundColor Green
+
 Copy-SharedBundle -StagingDir $ghStagingDir -NoRefresh
 
 $ghZipName = "AbzuHeadTracking-v$version-installer.zip"
