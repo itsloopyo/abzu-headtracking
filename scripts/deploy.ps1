@@ -43,5 +43,11 @@ $result = Invoke-DevDeployASILoader `
 Write-DeploymentSuccess `
     -ModName "ABZU Head Tracking" `
     -DeployPath $result.DeployedDllPath `
-    -RecenterKey "Home" `
-    -ToggleKey "End"
+    -Controls @(
+        "Home      - Recenter head tracking",
+        "End       - Toggle head tracking on/off",
+        "Page Up   - Cycle DOF mode (6DOF / rotation-only / position-only)",
+        "Page Down - Toggle yaw mode (world / local)",
+        "",
+        "No nav cluster? Chords: Ctrl+Shift+ T=Recenter Y=Toggle G=DOF mode H=Yaw mode"
+    )
