@@ -11,7 +11,10 @@ cmake = ">=3.28"
 
 [tasks]
 sync = { cmd = "git submodule update --remote cameraunlock-core" }
-setup = { cmd = "powershell -Command \"if (-not (Test-Path 'build')) { cmake -B build -G 'Visual Studio 17 2022' -A x64 } else { Write-Host 'Build directory exists' -ForegroundColor Yellow }\"" }
+# No -G: let CMake auto-detect the installed Visual Studio generator. Pinning
+# "Visual Studio 17 2022" broke on CI once the windows runner image moved to
+# VS 2026 (VS 17 absent); auto-detect picks whatever VS the machine has.
+setup = { cmd = "powershell -Command \"if (-not (Test-Path 'build')) { cmake -B build -A x64 } else { Write-Host 'Build directory exists' -ForegroundColor Yellow }\"" }
 build = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
 build-debug = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
 clean = { cmd = "powershell -Command \"if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }\"" }
