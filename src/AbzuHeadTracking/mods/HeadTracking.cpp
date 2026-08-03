@@ -121,6 +121,13 @@ void HeadTracking::OnFrame() {
         return;
     }
 
+    if (m_receiver->TryConsumeRecenterRequest()) {
+        m_receiver->Recenter();
+        m_processor.Reset();
+        m_recenterPending.store(true, std::memory_order_release);
+        UEHT_LOG(Info, "Recentered by tracker app.");
+    }
+
     float yaw{}, pitch{}, roll{};
     if (!m_receiver->GetRotation(yaw, pitch, roll)) return;
 
