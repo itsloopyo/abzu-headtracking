@@ -4,7 +4,7 @@ AbzuHeadTracking bundles or links against the following third-party components.
 
 ## Ultimate ASI Loader
 
-- **Version:** v9.7.1
+- **Version:** v9.7.2
 - **License:** MIT
 - **Upstream:** https://github.com/ThirteenAG/Ultimate-ASI-Loader
 - **Usage:** Loads the mod's `.asi` plugin into the ABZU process via the `dinput8.dll` hook slot.
