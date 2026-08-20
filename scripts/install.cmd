@@ -24,7 +24,7 @@ set "MOD_VERSION=0.0.0"
 set "STATE_FILE=.headtracking-state.json"
 set "FRAMEWORK_TYPE=ASILoader"
 set "ASI_LOADER_NAME=xinput1_3.dll"
-set "MOD_CONTROLS=Controls: Home = recenter | End = toggle tracking | PageUp = toggle position | PageDown = toggle yaw mode | Ctrl+Shift+T/Y/G/H chord alternatives"
+set "MOD_CONTROLS=Controls: End = toggle tracking | PageUp = toggle position | PageDown = toggle yaw mode | Ctrl+Shift+Y/G/H chord alternatives"
 :: ASI_LOADER_NAME is the filename the ASI DLL is renamed to. DL2 and most
 :: modern games use winmm.dll; older ones use dinput8.dll or xinput1_3.dll.
 :: vendor/ultimate-asi-loader/dinput8.dll is the bundled source; we copy it

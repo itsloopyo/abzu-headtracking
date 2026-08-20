@@ -52,7 +52,18 @@ void Init(const std::string& path) {
     std::lock_guard lk(g_mutex);
     if (g_init) return;
     if (!path.empty()) {
-        g_file.open(path, std::ios::out | std::ios::app);
+        // Start fresh each launch so a bug report carries one session, not the
+        // whole history of the install. One previous generation is kept because
+        // the session worth reading is often the one that just crashed, and the
+        // user relaunches before sending the file.
+        std::string prev = path;
+        if (prev.size() > 4 && prev.compare(prev.size() - 4, 4, ".log") == 0) {
+            prev.resize(prev.size() - 4);
+        }
+        prev += ".prev.log";
+        MoveFileExA(path.c_str(), prev.c_str(), MOVEFILE_REPLACE_EXISTING);
+
+        g_file.open(path, std::ios::out | std::ios::trunc);
     }
     g_init = true;
 }

@@ -3,6 +3,8 @@
 #include "Framework.hpp"
 #include "utility/Logging.hpp"
 
+#include "cameraunlock/math/smoothing_utils.h"
+
 #include <cctype>
 #include <cstring>
 
@@ -66,14 +68,17 @@ std::optional<std::string> HeadTracking::OnInitialize() {
 
     m_processor.SetSensitivity(cfg.AsSensitivity());
     m_processor.SetDeadzone(cfg.AsDeadzone());
-    m_processor.SetSmoothing(cfg.smoothing);
+    m_processor.SetLocalSmoothing(cfg.local_smoothing);
+    m_processor.SetRemoteSmoothing(cfg.remote_smoothing);
 
+    // AsPositionSettings carries both smoothing values, so position uses the
+    // same connection-selected smoothing as rotation.
     m_posProcessor.SetSettings(cfg.AsPositionSettings());
 
     m_receiver = std::make_unique<cameraunlock::UdpReceiver>();
     m_receiver->SetLog([](const std::string& m){ UEHT_LOG(Info, "[udp] %s", m.c_str()); });
     if (!m_receiver->Start(cfg.udp_port)) {
-        // Non-fatal — UdpReceiver schedules its own retry loop when the port
+        // Non-fatal - UdpReceiver schedules its own retry loop when the port
         // is held. We log and continue; pose simply stays zero until it binds.
         UEHT_LOG(Warn, "OpenTrack UDP %u not bound yet; receiver will retry.", cfg.udp_port);
     } else {
@@ -81,10 +86,7 @@ std::optional<std::string> HeadTracking::OnInitialize() {
     }
 
     m_hotkeys = std::make_unique<cameraunlock::input::HotkeyPoller>();
-    // Nav-cluster bindings (Home / End) from config.
-    if (int vk = ParseVk(cfg.recenter_key); vk != 0) {
-        m_hotkeys->SetRecenterKey(vk, [this]{ Recenter(); });
-    }
+    // Nav-cluster bindings (End / PageUp / PageDown) from config.
     if (int vk = ParseVk(cfg.toggle_key); vk != 0) {
         m_hotkeys->SetToggleKey(vk, [this]{ SetEnabled(!Enabled()); });
     }
@@ -94,14 +96,17 @@ std::optional<std::string> HeadTracking::OnInitialize() {
     if (int vk = ParseVk(cfg.position_key); vk != 0) {
         m_hotkeys->AddHotkey(vk, [this]{ CycleDofMode(); });
     }
-    // Chord equivalents (Ctrl+Shift+T recenter, Ctrl+Shift+Y toggle, Ctrl+Shift+G
-    // DOF-mode cycle, Ctrl+Shift+H yaw mode) for keyboards without a nav cluster.
+    // Chord equivalents (Ctrl+Shift+Y toggle, Ctrl+Shift+G DOF-mode cycle,
+    // Ctrl+Shift+H yaw mode) for keyboards without a nav cluster.
     // The poller edge-detects the letter; ChordHeld gates it.
-    m_hotkeys->AddHotkey('T', [this]{ if (ChordHeld()) Recenter(); });
     m_hotkeys->AddHotkey('Y', [this]{ if (ChordHeld()) SetEnabled(!Enabled()); });
     m_hotkeys->AddHotkey('G', [this]{ if (ChordHeld()) CycleDofMode(); });
     m_hotkeys->AddHotkey('H', [this]{ if (ChordHeld()) ToggleYawMode(); });
     m_hotkeys->Start();
+
+    // Seed the locality flag so the first frame already uses the right value.
+    m_isRemoteConnection = !m_receiver->IsRemoteConnection();
+    SyncConnectionLocality();
 
     m_lastFrame = std::chrono::steady_clock::now();
     return std::nullopt;
@@ -121,12 +126,9 @@ void HeadTracking::OnFrame() {
         return;
     }
 
-    if (m_receiver->TryConsumeRecenterRequest()) {
-        m_receiver->Recenter();
-        m_processor.Reset();
-        m_recenterPending.store(true, std::memory_order_release);
-        UEHT_LOG(Info, "Recentered by tracker app.");
-    }
+    // A tracker swap (local OpenTrack <-> phone on WiFi) must pick up the other
+    // smoothing parameter without a restart, so the flag is re-read every frame.
+    SyncConnectionLocality();
 
     float yaw{}, pitch{}, roll{};
     if (!m_receiver->GetRotation(yaw, pitch, roll)) return;
@@ -144,13 +146,12 @@ void HeadTracking::OnFrame() {
     const bool isNew = (sampleTs != m_lastSampleTs);
     m_lastSampleTs = sampleTs;
 
-    // Recenter (Home / Ctrl+Shift+T) or a fresh resume after data loss: clear the
-    // interpolator history and smoothing so we ease in from the live sample rather
-    // than from a stale segment. Done on the game thread so nothing races Process.
-    const bool recenter = m_recenterPending.exchange(false, std::memory_order_acq_rel);
+    // A fresh resume after data loss: clear the interpolator history and smoothing
+    // so we ease in from the live sample rather than from a stale segment. Done on
+    // the game thread so nothing races Process.
     const bool resume = !m_wasReceiving;
     m_wasReceiving = true;
-    if (recenter || resume) {
+    if (resume) {
         m_poseInterp.Reset();
         m_posInterp.Reset();
         m_posProcessor.ResetSmoothing();
@@ -181,13 +182,15 @@ void HeadTracking::OnFrame() {
     // new-sample detection as the pose interpolator.
     const cameraunlock::PositionData raw(px, py, pz, sampleTs);
 
-    if (recenter) m_posProcessor.SetCenter(raw);
-
     const cameraunlock::PositionData interpPos = m_posInterp.Update(raw, dt);
 
-    // Tracker-pivot compensation wants the processed rotation as a quaternion.
-    const auto rotQ = cameraunlock::math::Quat4::FromYawPitchRoll(
-        processed.yaw, processed.pitch, processed.roll);
+    // Tracker-pivot compensation wants the PHYSICAL head rotation - the centered,
+    // smoothed pose before per-axis sensitivity and inversion. `processed` carries
+    // both, which scales the compensation by the sensitivity factor and applies it
+    // backwards on an inverted axis.
+    float physYaw{}, physPitch{}, physRoll{};
+    m_processor.GetSmoothedRotation(physYaw, physPitch, physRoll);
+    const auto rotQ = cameraunlock::math::Quat4::FromYawPitchRoll(physYaw, physPitch, physRoll);
     const cameraunlock::math::Vec3 offset = m_posProcessor.Process(interpPos, rotQ, dt);
 
     m_outPosX.store(offset.x, std::memory_order_relaxed);
@@ -219,15 +222,22 @@ HeadPosition HeadTracking::CurrentPosition() const {
     return p;
 }
 
-void HeadTracking::Recenter() {
-    if (m_receiver) m_receiver->Recenter();
-    m_processor.Recenter();
-    m_recenterPending.store(true, std::memory_order_release);  // position center captured next frame
-    UEHT_LOG(Info, "Recentered.");
+void HeadTracking::SyncConnectionLocality() {
+    const bool isRemote = m_receiver->IsRemoteConnection();
+    if (isRemote == m_isRemoteConnection) return;
+    m_isRemoteConnection = isRemote;
+
+    m_processor.SetIsRemoteConnection(isRemote);
+    m_posProcessor.SetIsRemoteConnection(isRemote);
+
+    const auto& cfg = Framework::Get().Cfg();
+    const double effective = cameraunlock::math::GetEffectiveSmoothing(
+        cfg.local_smoothing, cfg.remote_smoothing, isRemote);
+    UEHT_LOG(Info, "Tracker connection is %s; smoothing=%.2f",
+             isRemote ? "remote" : "local", effective);
 }
 
 void HeadTracking::CycleDofMode() {
-    const bool wasPos = PositionEnabled();
     DofMode next;
     const char* label;
     switch (GetDofMode()) {
@@ -236,12 +246,6 @@ void HeadTracking::CycleDofMode() {
         default:                    next = DofMode::SixDof;       label = "6DOF (rotation + position)"; break;
     }
     m_dofMode.store(next, std::memory_order_release);
-    // Re-seat the position origin only on an off->on transition, so enabling
-    // position starts from the current head pose instead of jumping by whatever
-    // offset accrued while it was off. Leaving it on (position-only -> 6DOF) must
-    // not recenter, or the view would snap back to neutral.
-    const bool nowPos = (next != DofMode::RotationOnly);
-    if (nowPos && !wasPos) m_recenterPending.store(true, std::memory_order_release);
     UEHT_LOG(Info, "DOF mode: %s", label);
 }
 

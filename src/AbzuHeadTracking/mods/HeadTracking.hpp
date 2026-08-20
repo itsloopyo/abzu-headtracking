@@ -46,7 +46,6 @@ public:
 
     bool Enabled() const { return m_enabled.load(std::memory_order_acquire); }
     void SetEnabled(bool e) { m_enabled.store(e, std::memory_order_release); }
-    void Recenter();
 
     /// Which degrees of freedom are live. PageUp / Ctrl+Shift+G cycles these.
     enum class DofMode {
@@ -66,6 +65,10 @@ public:
     void ToggleYawMode();
 
 private:
+    /// Re-reads the receiver's source-address locality and, on a change, points
+    /// both processors at the matching smoothing parameter.
+    void SyncConnectionLocality();
+
     std::unique_ptr<cameraunlock::UdpReceiver>       m_receiver;
     // Pipeline order (doctrine): receiver -> interpolator -> processor. The
     // interpolator bridges tracker sample rate to frame rate (velocity-continuous
@@ -81,11 +84,12 @@ private:
     // packet; an unchanged stamp across frames means "no new data, keep interpolating".
     int64_t m_lastSampleTs = 0;
     bool    m_wasReceiving = false;
+    // Last locality pushed to the processors; drives LocalSmoothing vs RemoteSmoothing.
+    bool    m_isRemoteConnection = false;
 
     std::atomic<bool> m_enabled{true};
     std::atomic<bool> m_worldSpaceYaw{true};   // initialized from config at startup
     std::atomic<DofMode> m_dofMode{DofMode::SixDof};  // initialized from config at startup
-    std::atomic<bool> m_recenterPending{false};
 
     // Latest processed pose, published from OnFrame.
     mutable std::atomic<float> m_outYaw  {0.0f};

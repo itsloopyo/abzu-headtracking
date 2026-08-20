@@ -11,7 +11,7 @@ namespace ueht {
 class HeadTracking;
 
 /// FRotator as Unreal lays it out in memory: { Pitch, Yaw, Roll } floats (deg).
-/// We don't depend on Unreal headers — this matches UE4.x and UE5.x.
+/// We don't depend on Unreal headers - this matches UE4.x and UE5.x.
 #pragma pack(push, 4)
 struct FRotator {
     float Pitch = 0.0f;

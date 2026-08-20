@@ -3,7 +3,7 @@
 // Clean-room reverse-engineering primitives for locating Unreal Engine
 // structures inside a shipping game binary.
 //
-// None of this code is derived from UEVR or any other source — these are
+// None of this code is derived from UEVR or any other source - these are
 // textbook techniques (string-ref scanning, RIP-relative displacement
 // resolution, function-prologue walking) reimplemented from first
 // principles against the public x86-64 SysV/MS ABIs and Epic's public

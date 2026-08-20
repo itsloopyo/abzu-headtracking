@@ -44,10 +44,9 @@ Write-DeploymentSuccess `
     -ModName "ABZU Head Tracking" `
     -DeployPath $result.DeployedDllPath `
     -Controls @(
-        "Home      - Recenter head tracking",
         "End       - Toggle head tracking on/off",
         "Page Up   - Cycle DOF mode (6DOF / rotation-only / position-only)",
         "Page Down - Toggle yaw mode (world / local)",
         "",
-        "No nav cluster? Chords: Ctrl+Shift+ T=Recenter Y=Toggle G=DOF mode H=Yaw mode"
+        "No nav cluster? Chords: Ctrl+Shift+ Y=Toggle G=DOF mode H=Yaw mode"
     )

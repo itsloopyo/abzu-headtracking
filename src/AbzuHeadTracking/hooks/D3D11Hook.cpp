@@ -33,7 +33,7 @@ HRESULT STDMETHODCALLTYPE PresentDetour(IDXGISwapChain* swap, UINT sync, UINT fl
         try {
             if (g_callback) g_callback();
         } catch (...) {
-            // Swallow — never propagate into the engine's render thread.
+            // Swallow - never propagate into the engine's render thread.
         }
         g_inPresent.store(false, std::memory_order_release);
     }

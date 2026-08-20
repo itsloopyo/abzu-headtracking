@@ -201,7 +201,7 @@ uintptr_t WalkToFunctionStart(uintptr_t address, size_t max_back) {
     for (size_t i = 0; i < max_back; ++i) {
         const uint8_t b = p[-static_cast<ptrdiff_t>(i)];
         if (b == 0xCC) {
-            // INT3 alignment padding — function starts right after.
+            // INT3 alignment padding - function starts right after.
             return reinterpret_cast<uintptr_t>(&p[-static_cast<ptrdiff_t>(i) + 1]);
         }
         if (b == 0xC3) {

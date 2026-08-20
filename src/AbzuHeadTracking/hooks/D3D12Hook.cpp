@@ -1,4 +1,4 @@
-// D3D12 Present hook scaffold. Intentionally empty for now — see header.
+// D3D12 Present hook scaffold. Intentionally empty for now - see header.
 //
 // A working implementation needs:
 //   1. D3D12CreateDevice + a dummy command queue + dummy IDXGISwapChain3.

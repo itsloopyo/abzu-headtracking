@@ -11,10 +11,10 @@ class Framework;
 /// Base class for all UEHT mods. Mods are instantiated once and survive for
 /// the lifetime of the host process. Lifecycle:
 ///
-///   1. `OnInitialize()` — once, on the init thread, after Framework is up.
+///   1. `OnInitialize()` - once, on the init thread, after Framework is up.
 ///      Return a non-empty string to abort load (and log the reason).
-///   2. `OnFrame()` — every Present from the render thread.
-///   3. `OnShutdown()` — once, on DLL detach (best-effort; may be skipped).
+///   2. `OnFrame()` - every Present from the render thread.
+///   3. `OnShutdown()` - once, on DLL detach (best-effort; may be skipped).
 class Mod {
 public:
     virtual ~Mod() = default;

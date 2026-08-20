@@ -178,6 +178,8 @@ UnrealCamera::Mode ParseMode(const std::string& s) {
     return UnrealCamera::Mode::ControlRotation;
 }
 
+constexpr int kDiagSamples = 20;
+
 uintptr_t HostModuleBase() {
     return reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
 }
@@ -256,10 +258,12 @@ void UnrealCamera::TickControlRotation() {
         return;
     }
 
-    // Diagnostic: every ~300 frames, log the slot value BEFORE our write to see
-    // whether UE has been overwriting our previous write (architectural test).
+    // Diagnostic: log the slot value BEFORE our write to see whether UE has been
+    // overwriting our previous write (architectural test). Capped per session:
+    // the answer is visible in the first few samples, and left uncapped this one
+    // line is ~180 KB/hour of the log a user is asked to send us.
     static thread_local int s_diagCounter = 0;
-    const bool diag = ((s_diagCounter++ % 300) == 0);
+    const bool diag = (s_diagCounter < 300 * kDiagSamples) && ((s_diagCounter++ % 300) == 0);
 
     FRotator engineIntent;
     engineIntent.Pitch = Wrap180(current.Pitch - s_lastDelta.Pitch);
@@ -455,7 +459,6 @@ void UnrealCamera::WatchPov(uintptr_t pcm) {
     constexpr int kCount = (kHi - kLo) / kStep;
     static float s_prev[kCount];
     static bool  s_have = false;
-    static int   s_frame = 0;
 
     if (!s_have) {
         for (int i = 0; i < kCount; ++i) {
@@ -467,8 +470,25 @@ void UnrealCamera::WatchPov(uintptr_t pcm) {
         return;
     }
 
-    // Throttle so a moving camera doesn't flood the log every frame.
-    const bool emit = ((s_frame++ % 30) == 0);
+    // One pass emits up to 72 lines, so a frame-count throttle scales the log
+    // with refresh rate: 1-in-30 at 144fps is ~62 MB/hour. Space the passes on
+    // the wall clock instead and cap them per session. The offsets an RE
+    // session is after surface within the first couple of minutes of wiggling
+    // the camera, which is what kWatchPovPasses buys at kWatchPovIntervalMs.
+    constexpr uint64_t kWatchPovIntervalMs = 500;
+    constexpr int kWatchPovPasses = 240;
+    static uint64_t s_nextEmitMs = 0;
+    static int s_passes = 0;
+    const uint64_t nowMs = GetTickCount64();
+    bool emit = false;
+    if (s_passes < kWatchPovPasses && nowMs >= s_nextEmitMs) {
+        emit = true;
+        ++s_passes;
+        s_nextEmitMs = nowMs + kWatchPovIntervalMs;
+        if (s_passes == kWatchPovPasses) {
+            UEHT_LOG(Info, "WatchPov: pass cap reached; no further offset changes will be logged.");
+        }
+    }
     for (int i = 0; i < kCount; ++i) {
         float cur = 0.0f;
         if (!SafeRead(pcm + kLo + static_cast<uint32_t>(i) * kStep, cur)) continue;

@@ -20,12 +20,15 @@ struct Config {
     bool     invert_yaw    = false;
     bool     invert_pitch  = false;
     bool     invert_roll   = false;
-    float    smoothing     = 0.2f;
+    // Smoothing is picked per connection from the packet source address: a
+    // tracker on this machine (loopback) uses local_smoothing, a remote network
+    // device uses remote_smoothing. Both cover rotation and position.
+    float    local_smoothing  = 0.0f;
+    float    remote_smoothing = 0.15f;
     float    deadzone      = 0.5f;
 
     // [hotkeys] - nav-cluster virtual-key names matched by hotkey_poller.
-    // Ctrl+Shift+T/Y/H chord equivalents are registered unconditionally in code.
-    std::string recenter_key  = "Home";
+    // Ctrl+Shift+Y/G/H chord equivalents are registered unconditionally in code.
     std::string toggle_key    = "End";
     std::string yaw_mode_key  = "PageDown";  // toggle world-space vs camera-local yaw
     std::string position_key  = "PageUp";    // toggle 6DOF positional tracking
@@ -70,7 +73,6 @@ struct Config {
     float    pos_limit_y      = 0.20f;
     float    pos_limit_z      = 0.40f;   // forward lean (generous)
     float    pos_limit_z_back = 0.10f;   // backward lean (restricted, avoids clipping)
-    float    pos_smoothing    = 0.15f;
     uint32_t location_offset  = 0x3F8;   // PCM-relative FVector the renderer reads; 0 = off
 
     // [debug]
@@ -103,10 +105,17 @@ struct Config {
         p.invert_y      = invert_pos_y;
         p.invert_z      = invert_pos_z;
         p.limit_x       = pos_limit_x;
+        // The clamp is [-limit_y_down, +limit_y]. The INI exposes one vertical
+        // limit, so mirror it rather than leaving the downward budget on the
+        // core's default and silently decoupled from the configured value.
         p.limit_y       = pos_limit_y;
+        p.limit_y_down  = pos_limit_y;
         p.limit_z       = pos_limit_z;
         p.limit_z_back  = pos_limit_z_back;
-        p.smoothing     = pos_smoothing;
+        // Position carries the same two smoothing values as rotation; the
+        // processor's connection flag picks which one applies.
+        p.local_smoothing  = local_smoothing;
+        p.remote_smoothing = remote_smoothing;
         return p;
     }
 

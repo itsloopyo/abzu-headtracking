@@ -16,7 +16,7 @@ Head tracking for ABZU that moves your view with your head while your controller
 - **Decoupled look** - head tracking moves only the rendered camera. Your swim direction and every game control stay untouched, so the diver keeps heading where you steer no matter where you look.
 - **6DOF positional tracking** - lean and peek with head position, also injected into the rendered view only.
 - **Rotation + position DOF modes** - cycle between full 6DOF, rotation-only, and position-only in-game.
-- **Frame-rate-independent smoothing** and auto-recenter on connect.
+- **Frame-rate-independent smoothing** and sample-rate-agnostic interpolation.
 
 ## Requirements
 
@@ -76,7 +76,6 @@ Two equivalent binding sets - use whichever your keyboard has. Both fire the sam
 
 | Action | Nav-cluster | Chord |
 |--------|-------------|-------|
-| Recenter | `Home` | `Ctrl+Shift+T` |
 | Toggle tracking | `End` | `Ctrl+Shift+Y` |
 | Cycle DOF mode (6DOF / rotation-only / position-only) | `Page Up` | `Ctrl+Shift+G` |
 | Toggle yaw mode (horizon-locked / camera-local) | `Page Down` | `Ctrl+Shift+H` |
@@ -104,13 +103,15 @@ InvertRoll  = true
 ; Deadzone in degrees, applied to all axes. 0 = off.
 Deadzone = 0.0
 
-; 0.0 - 1.0. An internal floor of 0.15 is enforced to suppress jitter.
-Smoothing = 0.0
+; Smoothing is chosen per connection and covers rotation and position. A tracker
+; on this machine (loopback) uses LocalSmoothing; a phone or other device on the
+; network uses RemoteSmoothing. 0.0 = none .. 1.0 = heavy.
+LocalSmoothing  = 0.0
+RemoteSmoothing = 0.15
 
 [Hotkeys]
-; Win32 VK names (or a numeric VK like 0x22). Ctrl+Shift+T/Y/G/H chord
+; Win32 VK names (or a numeric VK like 0x22). Ctrl+Shift+Y/G/H chord
 ; alternatives are baked in for keyboards without a nav cluster.
-RecenterKey = Home
 ToggleKey   = End
 PositionKey = PageUp
 YawModeKey  = PageDown
@@ -143,7 +144,6 @@ LimitX     = 0.30
 LimitY     = 0.20
 LimitZ     = 0.40
 LimitZBack = 0.10
-Smoothing  = 0.15
 
 [Logging]
 LogToFile = true
@@ -156,7 +156,7 @@ The `[Camera]` and `[Position]` sections also carry preset engine offsets (`Upda
 
 **Mod not loading**
 - Confirm `dinput8.dll`, `AbzuHeadTracking.asi`, and `HeadTracking.ini` are all in `AbzuGame\Binaries\Win64\`.
-- Check `AbzuHeadTracking.log` in that folder for startup errors.
+- Check `AbzuHeadTracking.log` in that folder for startup errors. It is rewritten on every launch and the previous run is kept as `AbzuHeadTracking.prev.log`, so send both when reporting a problem.
 
 **No tracking response**
 - Verify OpenTrack output is set to UDP, address `127.0.0.1`, port `4242`, and that tracking is started.
@@ -164,13 +164,13 @@ The `[Camera]` and `[Position]` sections also carry preset engine offsets (`Upda
 - Confirm tracking is toggled on (`End` or `Ctrl+Shift+Y`).
 
 **Jittery or unstable tracking**
-- Raise `Smoothing` toward `1.0` in `HeadTracking.ini`.
+- Raise `LocalSmoothing` (tracker on this PC) or `RemoteSmoothing` (phone or other network device) toward `1.0` in `HeadTracking.ini`.
 - For wireless or phone trackers, increase smoothing in OpenTrack as well.
 
 **Wrong rotation axis or inverted axis**
 - Lower the offending axis sensitivity, or raise `Deadzone` above `0.0` to ignore small movements.
 - Flip `InvertYaw` / `InvertPitch` / `InvertRoll` if an axis moves the wrong way.
-- Recenter (`Home`) while looking straight ahead.
+- If the view sits off-straight, centre it in your tracker app (OpenTrack's Center bind, or the CENTER button in your phone app) while looking straight ahead. The mod applies whatever the tracker sends, so the tracker owns the centre.
 
 **View drifts or leans with head position**
 - Tune the `[Position]` sensitivities and limits, or flip `InvertX` / `InvertY` / `InvertZ`.

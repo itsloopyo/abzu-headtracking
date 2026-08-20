@@ -70,7 +70,7 @@ int main() {
 
     const char* levels[] = {"INFO", "WARN", "ERROR"};
     const std::string msgs[] = {
-        "Recentered.",
+        "Tracking enabled.",
         "LocateGEngine: scanned 5600000 pointer candidates",
         "",
         std::string(900, 'x'),

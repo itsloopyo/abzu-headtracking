@@ -7,7 +7,7 @@
 
 namespace ueht::ue {
 
-/// Unreal Engine major/minor — detected from the host exe's file version info.
+/// Unreal Engine major/minor - detected from the host exe's file version info.
 struct EngineVersion {
     uint16_t major = 0;
     uint16_t minor = 0;

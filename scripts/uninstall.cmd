@@ -25,7 +25,7 @@
 :: --- CONFIG BLOCK ---
 set "GAME_ID=abzu"
 set "MOD_DISPLAY_NAME=Abzu Head Tracking"
-set "MOD_DLLS=AbzuHeadTracking.asi HeadTracking.ini"
+set "MOD_DLLS=AbzuHeadTracking.asi HeadTracking.ini AbzuHeadTracking.log AbzuHeadTracking.prev.log"
 set "MOD_INTERNAL_NAME=AbzuHeadTracking"
 set "STATE_FILE=.headtracking-state.json"
 set "FRAMEWORK_TYPE=ASILoader"
