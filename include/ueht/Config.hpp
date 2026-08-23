@@ -40,7 +40,7 @@ struct Config {
     //   "updatecamera": decoupled path. Hook the PlayerCameraManager's per-frame
     //       camera-update virtual and add the head delta to the rendered POV
     //       only, leaving ControlRotation clean. Dormant until update_camera_slot
-    //       is set to the confirmed vtable index (see NOTES.md discovery plan).
+    //       is set to the confirmed vtable index.
     std::string camera_mode = "controlrotation";
     // Yaw axis. true (default) = horizon-locked: head-yaw rotates around the
     //   world up-axis regardless of camera pitch ("up is a constant"). false =

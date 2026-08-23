@@ -70,7 +70,7 @@ private:
     /// Resolve the live APlayerCameraManager instance. Returns 0 until ready.
     uintptr_t ResolveCameraManager();
     /// One-shot: log the live PCM vtable address, its RVA, and each slot's
-    /// target RVA. Read-only. Used to map slots to Ghidra (NOTES.md plan).
+    /// target RVA. Read-only. Used to map slots to Ghidra.
     void DumpVtable(uintptr_t pcm);
     /// Per-frame read-only diff: log PCM byte offsets whose float value changed
     /// since the last frame. Reveals the POV / camera-cache rotation offsets.

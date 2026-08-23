@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Third-party licence compliance. The `.asi` statically links MinHook, whose
+  BSD-2-Clause requires its copyright notice and disclaimer to travel with the
+  binary, and MinHook in turn carries the separately copyrighted Hacker
+  Disassembler Engine 32/64. `THIRD-PARTY-NOTICES.md` now reproduces every
+  required licence text in full, corrects the MinHook version to the pinned
+  v1.3.4 commit, and states the ABZU trademark and non-affiliation position.
+  The Nexus ZIP shipped the binary with no licence or notices at all and now
+  carries both. Packaging fails instead of silently omitting a licence file
 - `AbzuHeadTracking.log` now starts fresh on every launch instead of appending
   forever, and the previous session is kept alongside it as
   `AbzuHeadTracking.prev.log`

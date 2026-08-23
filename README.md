@@ -9,8 +9,6 @@
 
 Head tracking for ABZU that moves your view with your head while your controller or mouse keeps full control of movement and direction, with no VR headset required.
 
-<!-- ![Mod GIF](https://raw.githubusercontent.com/itsloopyo/abzu-headtracking/main/assets/readme-clip.gif) -->
-
 ## Features
 
 - **Decoupled look** - head tracking moves only the rendered camera. Your swim direction and every game control stay untouched, so the diver keeps heading where you steer no matter where you look.
@@ -209,7 +207,23 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Credits
 
-- [Giant Squid](https://www.giantsquid.com/) and 505 Games for ABZU.
+- [Giant Squid Studios](https://www.giantsquid.com/) and 505 Games for ABZU.
 - [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) by ThirteenAG.
 - [OpenTrack](https://github.com/opentrack/opentrack) for the UDP tracking protocol.
 - [MinHook](https://github.com/TsudaKageyu/minhook) by Tsuda Kageyu.
+
+Third-party license texts are reproduced in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which ships in every release.
+
+## Disclaimer
+
+This is an unofficial, fan-made modification. It is not affiliated with,
+endorsed by, or sponsored by Giant Squid Studios, 505 Games, Epic Games, or any
+other rights holder. ABZU and all related names, logos, and marks are
+trademarks of their respective owners and are used here only to identify the
+game the mod applies to.
+
+The mod ships no game code and no game assets, modifies no game files, and
+requires a legitimately purchased copy of ABZU. It changes only what the
+rendered camera shows while the game is running, and uninstalling it returns
+the game to stock.

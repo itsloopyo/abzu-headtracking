@@ -71,20 +71,24 @@ Write-Host "  plugins/HeadTracking.ini" -ForegroundColor Green
 
 $ghVendorDir = Join-Path $ghStagingDir "vendor/ultimate-asi-loader"
 New-Item -ItemType Directory -Path $ghVendorDir -Force | Out-Null
+# The loader's MIT license requires its copyright notice to travel with the
+# binary, so LICENSE is as mandatory as the DLL itself.
 foreach ($vendorFile in @("dinput8.dll", "LICENSE", "README.md")) {
     $src = Join-Path $vendorAsiDir $vendorFile
-    if (Test-Path $src) {
-        Copy-Item $src -Destination $ghVendorDir -Force
-        Write-Host "  vendor/ultimate-asi-loader/$vendorFile" -ForegroundColor Green
-    }
+    if (-not (Test-Path $src)) { throw "Vendored loader file missing: vendor/ultimate-asi-loader/$vendorFile" }
+    Copy-Item $src -Destination $ghVendorDir -Force
+    Write-Host "  vendor/ultimate-asi-loader/$vendorFile" -ForegroundColor Green
 }
 
+# LICENSE and THIRD-PARTY-NOTICES.md carry the notices that MinHook's
+# BSD-2-Clause and the bundled loader's MIT require to accompany the binaries,
+# so a missing one is a licensing failure, not a cosmetic omission. Fail the
+# package rather than shipping without them.
 foreach ($doc in @("README.md", "LICENSE", "CHANGELOG.md", "THIRD-PARTY-NOTICES.md")) {
     $docPath = Join-Path $projectDir $doc
-    if (Test-Path $docPath) {
-        Copy-Item $docPath -Destination $ghStagingDir -Force
-        Write-Host "  $doc" -ForegroundColor Green
-    }
+    if (-not (Test-Path $docPath)) { throw "Required document not found: $doc" }
+    Copy-Item $docPath -Destination $ghStagingDir -Force
+    Write-Host "  $doc" -ForegroundColor Green
 }
 
 # launcher-manifest.json sits at the ZIP root - the contract lopari reads.
@@ -136,6 +140,17 @@ Write-Host "  AbzuGame/Binaries/Win64/HeadTracking.ini" -ForegroundColor Green
 
 # Nexus is the deploy subtree only - no vendored loader. Nexus users manage
 # their own ASI loader.
+
+# The .asi statically links MinHook (BSD-2-Clause), whose clause 2 requires the
+# copyright notice and disclaimer to accompany a binary distribution. The Nexus
+# ZIP is a binary distribution, so the notices ship at its root alongside our
+# own MIT license.
+foreach ($doc in @("LICENSE", "THIRD-PARTY-NOTICES.md", "README.md")) {
+    $docPath = Join-Path $projectDir $doc
+    if (-not (Test-Path $docPath)) { throw "Required document not found: $doc" }
+    Copy-Item $docPath -Destination $nexusStagingDir -Force
+    Write-Host "  $doc" -ForegroundColor Green
+}
 
 $nexusZipName = "AbzuHeadTracking-v$version-nexus.zip"
 $nexusZipPath = Join-Path $releaseDir $nexusZipName

@@ -15,7 +15,7 @@ PCM vtable (0x14206b400) yields UpdateCamera's address.
 
 We corroborate by decompiling each caller + the resolved callee and dumping
 them for eyeballing. PC->PlayerCameraManager offset 0x418 is confirmed in
-.lab/NOTES.md (FUN_1414efc30).
+the caller capture (FUN_1414efc30).
 """
 
 import json

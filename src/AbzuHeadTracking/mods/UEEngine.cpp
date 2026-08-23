@@ -55,15 +55,15 @@ EngineVersion DetectEngineVersion() {
 
 namespace {
 
-// UE 4.12 (ABZU) - offsets confirmed via Ghidra against
-// AbzuGame-Win64-Shipping.exe property registration immediates.
-// See .lab/NOTES.md for the decompilation evidence.
+// UE 4.12 (ABZU) - offsets measured with Ghidra against the property
+// registration immediates in a legitimately owned AbzuGame-Win64-Shipping.exe.
+// Byte offsets only; no game code is reproduced here.
 constexpr EngineOffsets kUE4_12_Abzu = {
     /*engine_to_game_instance              */ 0x5E8, // UEngine::GameViewport (UGameViewportClient*)
     /*game_instance_to_local_players       */ 0x38,  // UGameInstance::LocalPlayers (TArray)
     /*local_player_to_player_controller    */ 0x30,  // UPlayer::PlayerController (ULocalPlayer inherits UPlayer)
     /*controller_to_control_rotation       */ 0x3B0, // AController::ControlRotation (FRotator) - source UE reads each tick
-    /*player_controller_to_camera_manager  */ 0x418, // APlayerController::PlayerCameraManager (confirmed in-game, see NOTES.md)
+    /*player_controller_to_camera_manager  */ 0x418, // APlayerController::PlayerCameraManager (confirmed in-game)
 };
 
 }  // namespace

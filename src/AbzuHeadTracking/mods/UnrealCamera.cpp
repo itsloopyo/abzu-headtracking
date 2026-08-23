@@ -49,7 +49,7 @@ bool TryWriteRotation(FRotator* slot, float pitch, float yaw, float roll) {
 //
 // The signature is fixed by UE: (this=PCM in RCX, float DeltaTime in XMM1). The
 // hook only ever arms on a vtable slot the operator has confirmed is
-// UpdateCamera (see NOTES.md discovery flow), so the prototype matches by
+// UpdateCamera via the DumpVtable diagnostic, so the prototype matches by
 // construction. Statics here mirror the D3D11 Present hook pattern - MinHook
 // detours must be free functions.
 using UpdateCameraFn = void(__fastcall*)(void* pcm, float dt);
