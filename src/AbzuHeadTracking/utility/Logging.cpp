@@ -64,6 +64,13 @@ void Init(const std::string& path) {
         MoveFileExA(path.c_str(), prev.c_str(), MOVEFILE_REPLACE_EXISTING);
 
         g_file.open(path, std::ios::out | std::ios::trunc);
+        if (!g_file.is_open()) {
+            // Everything below this point would be written to a closed stream
+            // and vanish, and the user would be told to send a log that never
+            // appears. Say so on the one channel still working.
+            OutputDebugStringA(("[UEHT][ERROR] could not open log file " + path +
+                                "; no log will be written\n").c_str());
+        }
     }
     g_init = true;
 }

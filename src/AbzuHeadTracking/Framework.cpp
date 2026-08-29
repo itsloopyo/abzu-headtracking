@@ -40,7 +40,7 @@ std::wstring HostExePath() {
 // empty when the EXE path cannot be resolved; the caller says so rather than
 // dropping a log somewhere unrelated.
 std::string ResolveLogPath(const std::string& configured) {
-    const std::string name = configured.empty() ? "AbzuHeadTracking.log" : configured;
+    const std::string name = configured.empty() ? "HeadTracking.log" : configured;
     std::filesystem::path p(name);
     if (p.is_absolute()) return name;
     const std::wstring exe = HostExePath();

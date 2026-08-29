@@ -8,8 +8,8 @@
 
 #include <atomic>
 #include <cstdio>
-#include <cstring>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace ueht::ue {
@@ -95,6 +95,21 @@ constexpr uintptr_t kAbzuUEngineClassRVA = 0x02adde30;
 std::atomic<uintptr_t> g_cached_gengine{0};
 std::atomic<bool>      g_resolve_attempted{false};
 
+// LocateGEngine is retried every ~120 frames until the engine is constructed,
+// which on a cold start is the whole splash-and-menu stretch. Each failure
+// diagnostic is worth exactly one line per session; without these latches the
+// same handful of lines is what fills the log a user is asked to send us.
+bool g_warned_class_slot = false;
+bool g_warned_no_sections = false;
+bool g_warned_no_engine   = false;
+
+template <typename... Args>
+void LogOnce(bool& latch, const char* fmt, Args&&... args) {
+    if (latch) return;
+    latch = true;
+    UEHT_LOG(Warn, fmt, std::forward<Args>(args)...);
+}
+
 struct SectionRange {
     uintptr_t base = 0;
     size_t    size = 0;
@@ -112,12 +127,6 @@ std::vector<SectionRange> FindWritableSections(HMODULE mod) {
     auto sec = IMAGE_FIRST_SECTION(nt);
     for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
         if (sec[i].Characteristics & IMAGE_SCN_MEM_WRITE) {
-            char nm[9] = {};
-            std::memcpy(nm, sec[i].Name, 8);
-            UEHT_LOG(Info, "LocateGEngine: scanning writable section '%s' at 0x%llX size 0x%llX",
-                     nm,
-                     static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(base + sec[i].VirtualAddress)),
-                     static_cast<unsigned long long>(sec[i].Misc.VirtualSize));
             out.push_back(SectionRange{
                 reinterpret_cast<uintptr_t>(base + sec[i].VirtualAddress),
                 static_cast<size_t>(sec[i].Misc.VirtualSize),
@@ -154,19 +163,18 @@ uintptr_t LocateGEngine() {
     // Read UEngine UClass pointer from the well-known static slot.
     uintptr_t uengine_class = 0;
     if (!SafeRead(module_base + kAbzuUEngineClassRVA, uengine_class) || uengine_class == 0) {
-        UEHT_LOG(Warn, "LocateGEngine: UEngine UClass slot at +0x%llX is empty - engine not initialized yet",
-                 static_cast<unsigned long long>(kAbzuUEngineClassRVA));
+        LogOnce(g_warned_class_slot,
+                "LocateGEngine: UEngine UClass slot at +0x%llX is empty - engine not initialized yet; retrying",
+                static_cast<unsigned long long>(kAbzuUEngineClassRVA));
         g_resolve_attempted.store(false, std::memory_order_release);
         return 0;
     }
 
     auto sections = FindWritableSections(host);
     if (sections.empty()) {
-        UEHT_LOG(Warn, "LocateGEngine: no writable sections in host module");
+        LogOnce(g_warned_no_sections, "LocateGEngine: no writable sections in host module");
         return 0;
     }
-    UEHT_LOG(Info, "LocateGEngine: UEngine UClass = 0x%llX",
-             static_cast<unsigned long long>(uengine_class));
 
     // UObject layout in UE 4.12 (UObjectBase):
     //   +0x00  vtable
@@ -192,23 +200,9 @@ uintptr_t LocateGEngine() {
         return (v & kClassHeapMask) == uengine_class_region;
     };
 
-    // Dump UEngine UClass header so we can identify SuperStruct offset empirically.
-    // Whichever QWORD points back into the same heap region as uengine_class is the
-    // SuperStruct pointer (UEngine's parent UClass).
-    for (size_t off = 0x10; off <= 0x80; off += 8) {
-        uintptr_t v = 0;
-        if (SafeRead(uengine_class + off, v)) {
-            UEHT_LOG(Info, "LocateGEngine: UEngineUClass[+0x%02llX] = 0x%llX%s",
-                     static_cast<unsigned long long>(off),
-                     static_cast<unsigned long long>(v),
-                     IsClassLike(v) ? "  <- looks like UClass*" : "");
-        }
-    }
-
     const auto step = sizeof(uintptr_t);
     size_t candidate_count = 0;
     size_t class_like_total = 0;
-    size_t class_like_logged = 0;
 
     for (const auto& sect : sections) {
         for (uintptr_t p = sect.base; p + step <= sect.base + sect.size; p += step) {
@@ -226,23 +220,12 @@ uintptr_t LocateGEngine() {
             if (!IsClassLike(cls)) continue;
             ++class_like_total;
 
-            if (class_like_logged < 8) {
-                UEHT_LOG(Info, "LocateGEngine: candidate slot=0x%llX obj=0x%llX cls=0x%llX",
-                         static_cast<unsigned long long>(p),
-                         static_cast<unsigned long long>(candidate),
-                         static_cast<unsigned long long>(cls));
-                ++class_like_logged;
-            }
-
             // Walk SuperStruct chain looking for UEngine.
             uintptr_t walk = cls;
             for (int depth = 0; depth < kMaxChainDepth; ++depth) {
                 if (walk == uengine_class) {
-                    UEHT_LOG(Info, "LocateGEngine: found UEngine-derived instance at 0x%llX via slot 0x%llX (cls=0x%llX, depth=%d)",
-                             static_cast<unsigned long long>(candidate),
-                             static_cast<unsigned long long>(p),
-                             static_cast<unsigned long long>(cls),
-                             depth);
+                    UEHT_LOG(Info, "LocateGEngine: GEngine @ 0x%llX",
+                             static_cast<unsigned long long>(candidate));
                     g_cached_gengine.store(candidate, std::memory_order_release);
                     return candidate;
                 }
@@ -254,11 +237,10 @@ uintptr_t LocateGEngine() {
         }
     }
 
-    UEHT_LOG(Warn, "LocateGEngine: scanned %llu pointer candidates, %llu UClass-shaped (logged %llu), no UEngine in chain (SuperStructOffset=0x%llX)",
-             static_cast<unsigned long long>(candidate_count),
-             static_cast<unsigned long long>(class_like_total),
-             static_cast<unsigned long long>(class_like_logged),
-             static_cast<unsigned long long>(kSuperStructOffset));
+    LogOnce(g_warned_no_engine,
+            "LocateGEngine: scanned %llu pointer candidates, %llu UClass-shaped, no UEngine in chain; retrying",
+            static_cast<unsigned long long>(candidate_count),
+            static_cast<unsigned long long>(class_like_total));
     g_resolve_attempted.store(false, std::memory_order_release);
     return 0;
 }

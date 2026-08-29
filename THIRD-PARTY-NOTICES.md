@@ -1,33 +1,33 @@
 # Third-Party Notices
 
-AbzuHeadTracking bundles, statically links, or credits the following
-third-party components. Where a license requires the copyright notice and
-disclaimer to accompany a binary distribution, the full text is reproduced
-below, and this file ships inside every release ZIP.
+AbzuHeadTracking bundles, statically links, or credits the third-party components
+listed below. Each remains the property of its authors and is used under its own
+licence. Where a licence requires the copyright notice, the conditions and the
+disclaimer to accompany a binary distribution, the full text is reproduced here
+verbatim, and this file ships at the root of every release ZIP we publish.
 
-No ABZU code, assets, or proprietary DLLs are redistributed by this project.
+Nothing in this repository is derived from, or redistributes any part of,
+ABZU.
 
-## Summary
-
-| Component | Version | License | How it ships |
+| Component | Version | Licence | How it ships |
 |-----------|---------|---------|--------------|
-| Ultimate ASI Loader | v9.7.2 | MIT | `dinput8.dll` bundled verbatim in the installer ZIP |
-| MinHook (incl. HDE32 / HDE64) | v1.3.4, commit `05c06c5` | BSD-2-Clause | Statically linked into `AbzuHeadTracking.asi` |
-| cameraunlock-core | submodule, see `.gitmodules` | MIT | Compiled into `AbzuHeadTracking.asi` |
-| OpenTrack | n/a | ISC | Not bundled. UDP protocol interoperability only |
+| Ultimate ASI Loader | v9.7.2 | MIT | Bundled verbatim in the installer ZIP |
+| MinHook | v1.3.4-13-g05c06c5 | BSD-2-Clause | Compiled into `AbzuHeadTracking.asi` |
+| cameraunlock-core | 1fd2956b1819137f723a552725462ab25c14fa24 | MIT | Compiled into `AbzuHeadTracking.asi` |
+| OpenTrack | n/a | ISC | Not bundled; UDP protocol interoperability only |
 
 ---
 
 ## Ultimate ASI Loader
 
-- **Upstream:** https://github.com/ThirteenAG/Ultimate-ASI-Loader
-- **Version:** v9.7.2 (commit `ab722befd52581a34449b603926cfab476e66b05`)
-- **Usage:** loads the mod's `.asi` plugin into the ABZU process via the
-  `dinput8.dll` hook slot.
-- **Distribution:** the unmodified upstream `dinput8.dll` is bundled in the
-  installer ZIP at `vendor/ultimate-asi-loader/` and used as the install-time
-  source. The upstream LICENSE ships beside it in the same directory. The
-  Nexus ZIP does not bundle it; Nexus users install the loader themselves.
+Vendored at `vendor/ultimate-asi-loader/`, shipped in the installer ZIP and used as the
+install-time source. Taken from the upstream release asset untouched; the
+upstream licence file ships beside it at `vendor/ultimate-asi-loader/LICENSE`.
+
+- Upstream: https://github.com/ThirteenAG/Ultimate-ASI-Loader
+- Version: `v9.7.2`
+- Commit: `ab722befd52581a34449b603926cfab476e66b05`
+- SHA-256: `22fda9c71eaae02460f311bf3441638340ab591586d78f1de213c4819dcb883c`
 
 ```
 MIT License
@@ -57,17 +57,17 @@ SOFTWARE.
 
 ## MinHook
 
-- **Upstream:** https://github.com/TsudaKageyu/minhook
-- **Version:** v1.3.4, submodule pinned at commit
-  `05c06c5bbca226b72ffb40fc0caaef33bcaf6f74`
-- **Usage:** inline function hooking for the camera and D3D11 Present hooks.
-- **Distribution:** compiled from source and statically linked into
-  `AbzuHeadTracking.asi`. BSD-2-Clause requires the notice, conditions, and
-  disclaimer below to accompany that binary, so they are reproduced verbatim.
+Git submodule at `extern/minhook/`, compiled into `AbzuHeadTracking.asi`. The
+pinned commit below is the authoritative record of exactly what is built, and
+it is upstream's tree unmodified.
 
-MinHook incorporates the Hacker Disassembler Engine 32 C and Hacker
-Disassembler Engine 64 C, which carry a separate copyright. Both notices
-follow.
+- Upstream: https://github.com/TsudaKageyu/minhook
+- Version: `v1.3.4-13-g05c06c5`
+- Commit: `05c06c5bbca226b72ffb40fc0caaef33bcaf6f74`
+
+MinHook carries two copyright holders: Tsuda Kageyu for MinHook itself, and
+Vyacheslav Patkov for the Hacker Disassembler Engine that `src/hde/` is built
+from. Both notices appear below exactly as upstream ships them.
 
 ```
 MinHook - The Minimalistic API Hooking Library for x64/x86
@@ -157,12 +157,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## cameraunlock-core
 
-- **Upstream:** https://github.com/itsloopyo/cameraunlock-core
-- **Version:** submodule; the pinned commit is recorded in this repository's
-  tree.
-- **Usage:** shared head-tracking processing, protocol, math, and hook
-  management.
-- **Distribution:** compiled from source into `AbzuHeadTracking.asi`.
+Git submodule at `cameraunlock-core/`, compiled into `AbzuHeadTracking.asi`. Our own code,
+MIT licensed, reproduced here so the notices are complete.
+
+- Pinned commit: `1fd2956b1819137f723a552725462ab25c14fa24`
 
 ```
 MIT License
@@ -192,12 +190,11 @@ SOFTWARE.
 
 ## OpenTrack
 
-- **Upstream:** https://github.com/opentrack/opentrack
-- **License:** ISC
-- **Usage:** credit only. This mod reads the OpenTrack UDP pose datagram
-  layout on port 4242. No OpenTrack code, headers, or binaries are copied,
-  linked, or redistributed, so no ISC notice obligation is triggered. It is
-  listed here so users know where the wire format comes from.
+Not bundled and not linked. This mod implements the OpenTrack UDP pose datagram
+layout so that OpenTrack (https://github.com/opentrack/opentrack, ISC licence)
+and compatible trackers can drive it. No OpenTrack code, headers or binaries
+are copied, linked or redistributed, so its licence triggers no notice
+obligation here. It is credited because the wire format is its work.
 
 ---
 
@@ -205,13 +202,11 @@ SOFTWARE.
 
 ABZU is developed by Giant Squid Studios and published by 505 Games. ABZU and
 all related names, logos, and marks are trademarks of their respective owners
-and are used here only to identify the game this mod applies to.
-
-This project is an unofficial, fan-made modification. It is not affiliated
-with, endorsed by, or sponsored by Giant Squid Studios, 505 Games, Epic Games,
-or any other rights holder. It redistributes no game code, no game assets, and
-no proprietary DLLs, and it requires a legitimately purchased copy of the game.
-
+and are used here only to identify the game this mod applies to. This project
+is an unofficial, fan-made modification. It is not affiliated with, endorsed
+by, or sponsored by Giant Squid Studios, 505 Games, Epic Games, or any other
+rights holder. It redistributes no game code, no game assets, and no
+proprietary DLLs, and it requires a legitimately purchased copy of the game.
 Engine structure byte offsets and function addresses referenced in the source
 and in `HeadTracking.ini` were derived by the authors through independent
 analysis of a legitimately owned copy of the game. They are factual

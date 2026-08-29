@@ -59,12 +59,19 @@ private:
     /// and populates `m_rotationSlot` on success.
     bool Resolve();
 
+    /// How far WalkToPlayerController got on its last run. Only a change is
+    /// worth a log line - the walk is retried until the level is up.
+    enum class Stage { None, Viewport, GameInstance, LocalPlayers, LocalPlayer, PlayerController };
+
     /// Walk GEngine -> GameViewport -> GameInstance -> LocalPlayer[0] ->
     /// PlayerController. Returns the PlayerController pointer or 0. SEH-guarded.
     uintptr_t WalkToPlayerController(uintptr_t gengine, const ue::EngineOffsets& offsets);
 
     /// ControlRotation path: PlayerController -> ControlRotation FRotator.
     FRotator* WalkToRotation(uintptr_t gengine, const ue::EngineOffsets& offsets);
+
+    /// Warn about a faulted rotation slot, capped per session.
+    void NoteSlotFault(const char* msg);
 
     // --- Decoupled (UpdateCamera) path -------------------------------------
     /// Resolve the live APlayerCameraManager instance. Returns 0 until ready.
@@ -82,12 +89,17 @@ private:
     HeadTracking&             m_tracking;
     Mode                      m_mode = Mode::ControlRotation;
     std::atomic<FRotator*>    m_rotationSlot{nullptr};
-    bool                      m_resolveLogged = false; // throttle resolve logs
+    bool                      m_resolveLogged = false; // engine/offset-table warns, once each
+    Stage                     m_walkStall = Stage::None;    // last stage the GEngine walk stopped at
+    bool                      m_cameraSlotReported = false; // resolved-slot lines, once per session
+    int                       m_slotFaults = 0;             // capped by NoteSlotFault
     uint64_t                  m_framesSinceResolve = 0;
 
     std::atomic<uintptr_t>    m_pcm{0};                // live PlayerCameraManager
     bool                      m_vtableDumped = false;
     bool                      m_hookInstalled = false;
+    bool                      m_hookAbandoned = false; // permanent failure; stop retrying
+    bool                      m_hookSlotWarned = false;
 };
 
 }  // namespace ueht

@@ -25,11 +25,11 @@
 :: --- CONFIG BLOCK ---
 set "GAME_ID=abzu"
 set "MOD_DISPLAY_NAME=Abzu Head Tracking"
-set "MOD_DLLS=AbzuHeadTracking.asi HeadTracking.ini AbzuHeadTracking.log AbzuHeadTracking.prev.log"
+set "MOD_DLLS=AbzuHeadTracking.asi HeadTracking.ini HeadTracking.log HeadTracking.prev.log"
 set "MOD_INTERNAL_NAME=AbzuHeadTracking"
 set "STATE_FILE=.headtracking-state.json"
 set "FRAMEWORK_TYPE=ASILoader"
-set "LEGACY_DLLS="
+set "LEGACY_DLLS=AbzuHeadTracking.log AbzuHeadTracking.prev.log"
 
 :: --- Loader-specific config (leave the ones that don't apply blank) ---
 set "MANAGED_SUBFOLDER="

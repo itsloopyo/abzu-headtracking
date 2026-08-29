@@ -1,13 +1,15 @@
+# Abzu Head Tracking
+
+![ABZU running with this mod](https://raw.githubusercontent.com/itsloopyo/abzu-headtracking/main/assets/readme-clip.gif)
+
+An unofficial head tracking mod for ABZU that moves the camera with your head while your mouse or controller keeps control of movement, driven by a webcam, phone, or any OpenTrack compatible tracker, with no VR headset required.
+
 > [!CAUTION]
 > ## Experimental prototype - expect missing core features
 >
 > This is **not** a finished mod.
 >
 > Current builds may only test whether head tracking can drive the camera. Bug fixes and core features like decoupled look/aim, independent reticle behavior, correct shot direction, off-screen reticle support, movement handling, and comfort tuning may be missing at this early stage of development.
-
-# Abzu Head Tracking
-
-Head tracking for ABZU that moves your view with your head while your controller or mouse keeps full control of movement and direction, with no VR headset required.
 
 ## Features
 
@@ -145,7 +147,7 @@ LimitZBack = 0.10
 
 [Logging]
 LogToFile = true
-LogPath   = AbzuHeadTracking.log
+LogPath   = HeadTracking.log
 ```
 
 The `[Camera]` and `[Position]` sections also carry preset engine offsets (`UpdateCameraSlot`, `PovOffset`, `LocationOffset`) confirmed for the shipping ABZU build. Leave them as shipped unless a game patch moves them.
@@ -154,7 +156,7 @@ The `[Camera]` and `[Position]` sections also carry preset engine offsets (`Upda
 
 **Mod not loading**
 - Confirm `dinput8.dll`, `AbzuHeadTracking.asi`, and `HeadTracking.ini` are all in `AbzuGame\Binaries\Win64\`.
-- Check `AbzuHeadTracking.log` in that folder for startup errors. It is rewritten on every launch and the previous run is kept as `AbzuHeadTracking.prev.log`, so send both when reporting a problem.
+- Check `HeadTracking.log` in that folder for startup errors. It is rewritten on every launch and the previous run is kept as `HeadTracking.prev.log`, so send both when reporting a problem.
 
 **No tracking response**
 - Verify OpenTrack output is set to UDP, address `127.0.0.1`, port `4242`, and that tracking is started.

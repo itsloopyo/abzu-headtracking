@@ -218,7 +218,7 @@ void UnrealCamera::TickDecoupled() {
     if (cfg.watch_pov) {
         WatchPov(pcm);
     }
-    if (!m_hookInstalled && cfg.update_camera_slot >= 0) {
+    if (!m_hookInstalled && !m_hookAbandoned && cfg.update_camera_slot >= 0) {
         if (InstallDecoupledHook(pcm)) m_hookInstalled = true;
     }
     // Injection itself happens inside UpdateCameraDetour on the game thread.
@@ -231,7 +231,10 @@ void UnrealCamera::TickControlRotation() {
         if ((m_framesSinceResolve++ % 120) == 0) {
             if (Resolve()) {
                 slot = m_rotationSlot.load(std::memory_order_acquire);
-                UEHT_LOG(Info, "UnrealCamera: camera rotation slot at %p", slot);
+                if (!m_cameraSlotReported) {
+                    m_cameraSlotReported = true;
+                    UEHT_LOG(Info, "UnrealCamera: camera rotation slot at %p", slot);
+                }
             }
         }
         if (slot == nullptr) return;
@@ -252,7 +255,7 @@ void UnrealCamera::TickControlRotation() {
     // it and re-resolve.
     FRotator current{};
     if (!SafeRead(reinterpret_cast<uintptr_t>(slot), current)) {
-        UEHT_LOG(Warn, "UnrealCamera: rotation slot faulted on read; re-resolving.");
+        NoteSlotFault("UnrealCamera: rotation slot faulted on read; re-resolving.");
         m_rotationSlot.store(nullptr, std::memory_order_release);
         s_lastDelta = {};
         return;
@@ -280,7 +283,7 @@ void UnrealCamera::TickControlRotation() {
                          engineIntent.Roll  + delta.Roll};
 
     if (!TryWriteRotation(slot, wrote.Pitch, wrote.Yaw, wrote.Roll)) {
-        UEHT_LOG(Warn, "UnrealCamera: rotation slot faulted; re-resolving.");
+        NoteSlotFault("UnrealCamera: rotation slot faulted on write; re-resolving.");
         m_rotationSlot.store(nullptr, std::memory_order_release);
         s_lastDelta = {};
         return;
@@ -297,6 +300,19 @@ void UnrealCamera::TickControlRotation() {
     }
 
     s_lastDelta = delta;
+}
+
+// A dangling slot faults, re-resolves, and faults again forever, so the warn is
+// only useful for the first few cycles. Report the cap so the log says the
+// faults continued rather than implying they stopped.
+void UnrealCamera::NoteSlotFault(const char* msg) {
+    constexpr int kMaxSlotFaultLogs = 5;
+    if (m_slotFaults >= kMaxSlotFaultLogs) return;
+    ++m_slotFaults;
+    log::Warn(msg);
+    if (m_slotFaults == kMaxSlotFaultLogs) {
+        UEHT_LOG(Warn, "UnrealCamera: further slot faults will not be logged.");
+    }
 }
 
 void UnrealCamera::OnShutdown() {
@@ -344,33 +360,48 @@ bool UnrealCamera::Resolve() {
 }
 
 uintptr_t UnrealCamera::WalkToPlayerController(uintptr_t gengine, const ue::EngineOffsets& o) {
+    // The whole walk is unresolvable until the level is up, and the caller
+    // retries every ~120 frames, so a warn per stage per attempt is thousands of
+    // duplicate lines across a splash and a level load. Report a stage only when
+    // the walk stops somewhere new, which is the only thing that carries
+    // information: the stage it reaches tells us how far the chain is built.
+    const auto stall = [this](Stage stage, const std::string& msg) {
+        if (m_walkStall != stage) {
+            m_walkStall = stage;
+            log::Warn(msg);
+        }
+        return uintptr_t{0};
+    };
+
     uintptr_t viewport = 0;
     if (!SafeRead(gengine + o.engine_to_game_instance, viewport) || viewport == 0) {
-        UEHT_LOG(Warn, "Walk: GameViewport ptr null at GEngine+0x%zX", o.engine_to_game_instance);
-        return 0;
+        return stall(Stage::Viewport,
+                     log::Format("Walk: GameViewport ptr null at GEngine+0x%zX",
+                                 o.engine_to_game_instance));
     }
     uintptr_t game_instance = 0;  // UGameViewportClient::GameInstance at +0x88 (UE 4.12 ABZU)
     if (!SafeRead(viewport + 0x88, game_instance) || game_instance == 0) {
-        UEHT_LOG(Warn, "Walk: GameInstance ptr null at Viewport+0x88");
-        return 0;
+        return stall(Stage::GameInstance, "Walk: GameInstance ptr null at Viewport+0x88");
     }
     uintptr_t local_players_data = 0;
     if (!SafeRead(game_instance + o.game_instance_to_local_players, local_players_data) ||
         local_players_data == 0) {
-        UEHT_LOG(Warn, "Walk: LocalPlayers data null at GI+0x%zX", o.game_instance_to_local_players);
-        return 0;
+        return stall(Stage::LocalPlayers,
+                     log::Format("Walk: LocalPlayers data null at GI+0x%zX",
+                                 o.game_instance_to_local_players));
     }
     uintptr_t local_player = 0;
     if (!SafeRead(local_players_data, local_player) || local_player == 0) {
-        UEHT_LOG(Warn, "Walk: LocalPlayers[0] null");
-        return 0;
+        return stall(Stage::LocalPlayer, "Walk: LocalPlayers[0] null");
     }
     uintptr_t player_controller = 0;
     if (!SafeRead(local_player + o.local_player_to_player_controller, player_controller) ||
         player_controller == 0) {
-        UEHT_LOG(Warn, "Walk: PlayerController null at LP+0x%zX", o.local_player_to_player_controller);
-        return 0;
+        return stall(Stage::PlayerController,
+                     log::Format("Walk: PlayerController null at LP+0x%zX",
+                                 o.local_player_to_player_controller));
     }
+    m_walkStall = Stage::None;
     return player_controller;
 }
 
@@ -378,8 +409,13 @@ FRotator* UnrealCamera::WalkToRotation(uintptr_t gengine, const ue::EngineOffset
     const uintptr_t pc = WalkToPlayerController(gengine, o);
     if (pc == 0) return nullptr;
     const uintptr_t rot_addr = pc + o.controller_to_control_rotation;
-    UEHT_LOG(Info, "WalkToRotation: PC=0x%llX -> ControlRotation @ 0x%llX",
-             (unsigned long long)pc, (unsigned long long)rot_addr);
+    // Only reached from Resolve(), which the fault path re-runs indefinitely on
+    // a slot that keeps faulting. m_cameraSlotReported is still false on the first
+    // success, so this reports once and stays quiet through any re-resolve.
+    if (!m_cameraSlotReported) {
+        UEHT_LOG(Info, "WalkToRotation: PC=0x%llX -> ControlRotation @ 0x%llX",
+                 (unsigned long long)pc, (unsigned long long)rot_addr);
+    }
     return reinterpret_cast<FRotator*>(rot_addr);
 }
 
@@ -505,17 +541,32 @@ void UnrealCamera::WatchPov(uintptr_t pcm) {
 bool UnrealCamera::InstallDecoupledHook(uintptr_t pcm) {
     const auto& cfg = Framework::Get().Cfg();
     const int slot = cfg.update_camera_slot;
-    if (slot < 0 || slot >= 256) {
-        UEHT_LOG(Warn, "InstallDecoupledHook: update_camera_slot=%d out of range; staying dormant.", slot);
+
+    // This runs every frame until it succeeds, so anything that cannot become
+    // true later must stop the retry rather than log again next frame. A bad
+    // config value and a MinHook rejection are both permanent; abandoning them
+    // leaves the mod dormant, which is what an unhookable camera means anyway.
+    const auto abandon = [this](const std::string& msg) {
+        m_hookAbandoned = true;
+        log::Error(msg);
         return false;
+    };
+
+    if (slot < 0 || slot >= 256) {
+        return abandon(log::Format(
+            "InstallDecoupledHook: update_camera_slot=%d out of range; staying dormant.", slot));
     }
 
     uintptr_t vtable = 0;
     if (!SafeRead(pcm, vtable) || vtable == 0) return false;
 
+    // Transient: the PCM can be mid-construction on the frame we first see it.
     uintptr_t target = 0;
     if (!SafeRead(vtable + static_cast<uintptr_t>(slot) * 8, target) || target == 0) {
-        UEHT_LOG(Warn, "InstallDecoupledHook: vtable slot %d unreadable/null", slot);
+        if (!m_hookSlotWarned) {
+            m_hookSlotWarned = true;
+            UEHT_LOG(Warn, "InstallDecoupledHook: vtable slot %d unreadable/null; retrying", slot);
+        }
         return false;
     }
 
@@ -531,15 +582,15 @@ bool UnrealCamera::InstallDecoupledHook(uintptr_t pcm) {
     if (mh.CreateHook(reinterpret_cast<void*>(target),
                       reinterpret_cast<void*>(&UpdateCameraDetour),
                       reinterpret_cast<void**>(&g_origUpdateCamera)) != HookStatus::Ok) {
-        UEHT_LOG(Error, "InstallDecoupledHook: CreateHook failed for slot %d (target 0x%llX)",
-                 slot, (unsigned long long)target);
         g_hookTracking = nullptr;
-        return false;
+        return abandon(log::Format(
+            "InstallDecoupledHook: CreateHook failed for slot %d (target 0x%llX); staying dormant.",
+            slot, (unsigned long long)target));
     }
     if (mh.EnableHook(reinterpret_cast<void*>(target)) != HookStatus::Ok) {
-        UEHT_LOG(Error, "InstallDecoupledHook: EnableHook failed for slot %d", slot);
         g_hookTracking = nullptr;
-        return false;
+        return abandon(log::Format(
+            "InstallDecoupledHook: EnableHook failed for slot %d; staying dormant.", slot));
     }
 
     UEHT_LOG(Info,
