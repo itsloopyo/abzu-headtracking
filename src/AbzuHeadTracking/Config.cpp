@@ -116,7 +116,7 @@ bool Config::LoadFromFile(const std::string& path, Config& out) {
     out.pos_sens_z       = ini.ReadFloat("Position", "SensitivityZ", out.pos_sens_z);
     out.invert_pos_x     = ini.ReadBool ("Position", "InvertX",      out.invert_pos_x);
     out.invert_pos_y     = ini.ReadBool ("Position", "InvertY",      out.invert_pos_y);
-    out.invert_pos_z     = ini.ReadBool ("Position", "InvertZ",      out.invert_pos_z);
+    out.invert_tracker_z = ini.ReadBool ("Position", "InvertTrackerZ", out.invert_tracker_z);
     out.pos_limit_x      = ini.ReadFloat("Position", "LimitX",       out.pos_limit_x);
     out.pos_limit_y      = ini.ReadFloat("Position", "LimitY",       out.pos_limit_y);
     out.pos_limit_z      = ini.ReadFloat("Position", "LimitZ",       out.pos_limit_z);

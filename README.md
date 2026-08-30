@@ -179,7 +179,10 @@ SensitivityY = 1.0
 SensitivityZ = 1.0
 InvertX      = true
 InvertY      = false
-InvertZ      = true
+; Corrects a tracker whose depth axis runs backwards. Not a lean-direction
+; switch: it is applied before the LimitZ / LimitZBack clamp, so turning it on
+; also swaps which direction gets which budget.
+InvertTrackerZ = false
 ; Travel limits in meters. Z is asymmetric (more forward than back).
 LimitX     = 0.30
 LimitY     = 0.20
@@ -214,7 +217,8 @@ The `[Camera]` and `[Position]` sections also carry preset engine offsets (`Upda
 - If the view sits off-straight, centre it in your tracker app (OpenTrack's Center bind, or the CENTER button in your phone app) while looking straight ahead. The mod applies whatever the tracker sends, so the tracker owns the centre.
 
 **View drifts or leans with head position**
-- Tune the `[Position]` sensitivities and limits, or flip `InvertX` / `InvertY` / `InvertZ`.
+- Tune the `[Position]` sensitivities and limits, or flip `InvertX` / `InvertY` if sway or heave moves the wrong way.
+- `InvertTrackerZ` is for a tracker that sends depth backwards, not for a lean that feels reversed. It is applied before the `LimitZ` / `LimitZBack` clamp, so switching it on also swaps the travel budgets to 0.10m forward and 0.40m back.
 - To disable positional tracking, cycle DOF mode with `Page Up` (or `Ctrl+Shift+G`) to rotation-only, or set `[Position] Enabled = false`.
 
 **Yaw feels wrong when looking up or down at extreme angles**

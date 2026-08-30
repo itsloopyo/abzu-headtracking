@@ -48,3 +48,29 @@ set(CAMERAUNLOCK_BUILD_HOOKS ON  CACHE BOOL "" FORCE)
 add_subdirectory(${ABZU_CAMERAUNLOCK_DIR} ${CMAKE_BINARY_DIR}/_deps/cameraunlock EXCLUDE_FROM_ALL)
 
 add_subdirectory(src/AbzuHeadTracking)
+
+# Behaviour lock for the 6DOF lean boundary, driven by the shipped
+# HeadTracking.ini rather than the struct defaults. A separate executable that
+# links none of the hook or engine-walk machinery, so `pixi run test` runs
+# anywhere the mod builds, with no game installed.
+option(ABZU_BUILD_TESTS "Build the lean-budget behaviour tests" ON)
+if(ABZU_BUILD_TESTS)
+    enable_testing()
+    add_executable(abzuht_lean_tests
+        tests/lean_budget_tests.cpp
+        src/AbzuHeadTracking/Config.cpp
+        src/AbzuHeadTracking/utility/Logging.cpp
+    )
+    target_include_directories(abzuht_lean_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/AbzuHeadTracking
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_compile_definitions(abzuht_lean_tests PRIVATE
+        ABZUHT_SHIPPED_INI="${CMAKE_CURRENT_SOURCE_DIR}/HeadTracking.ini"
+    )
+    target_link_libraries(abzuht_lean_tests PRIVATE cameraunlock)
+    if(MSVC)
+        target_compile_options(abzuht_lean_tests PRIVATE /W4 /permissive- /EHsc)
+    endif()
+    add_test(NAME lean_budget COMMAND abzuht_lean_tests)
+endif()

@@ -68,7 +68,15 @@ struct Config {
     float    pos_sens_z       = 1.0f;
     bool     invert_pos_x     = false;
     bool     invert_pos_y     = false;
-    bool     invert_pos_z     = false;
+    // Depth is not a mirror of the other two. It corrects a tracker whose depth
+    // axis runs backwards, and PositionProcessor applies it BEFORE its
+    // asymmetric [-LimitZ, +LimitZBack] clamp, so turning it on also swaps
+    // which lean direction gets which budget. The flip into UE's +X-forward
+    // axes is not this knob's job: LeanWorldOffset does that after the clamp.
+    // Named apart from InvertX/InvertY so an existing HeadTracking.ini carrying
+    // the old InvertZ = true falls back to this default instead of reversing
+    // the lean.
+    bool     invert_tracker_z = false;
     float    pos_limit_x      = 0.30f;
     float    pos_limit_y      = 0.20f;
     float    pos_limit_z      = 0.40f;   // forward lean (generous)
@@ -103,7 +111,7 @@ struct Config {
         p.sensitivity_z = pos_sens_z;
         p.invert_x      = invert_pos_x;
         p.invert_y      = invert_pos_y;
-        p.invert_z      = invert_pos_z;
+        p.invert_z      = invert_tracker_z;
         p.limit_x       = pos_limit_x;
         // The clamp is [-limit_y_down, +limit_y]. The INI exposes one vertical
         // limit, so mirror it rather than leaving the downward budget on the

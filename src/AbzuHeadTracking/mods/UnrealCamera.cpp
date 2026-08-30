@@ -2,6 +2,7 @@
 
 #include "Framework.hpp"
 #include "HeadTracking.hpp"
+#include "LeanOffset.hpp"
 #include "UEEngine.hpp"
 #include "utility/Logging.hpp"
 #include "utility/SafeMemory.hpp"
@@ -65,10 +66,6 @@ std::atomic<uint32_t> g_locationOffset{0};
 struct FVector { float X, Y, Z; };
 #pragma pack(pop)
 
-/// OpenTrack -> UE world unit scale. Position arrives processed to meters; UE
-/// world space is centimeters.
-constexpr float kMetersToUU = 100.0f;
-
 // World-space (horizon-locked) yaw: add the head delta straight onto the FRotator.
 // A UE FRotator's Yaw is intrinsically a rotation about the world up-axis, so this
 // pans the view around vertical regardless of camera pitch. Pitch/roll fold onto
@@ -110,23 +107,14 @@ bool TryApplyLocal(uintptr_t rotator_addr, float dPitch, float dYaw, float dRoll
 }
 
 // Add the processed head-position offset to the rendered camera-cache Location.
-// The offset (sway/heave/surge, meters) is mapped into world space through the
-// camera's clean horizon-locked yaw so leaning follows body orientation, not the
-// head-rotated view (CameraUnlock 6DOF doctrine). Yaw-only basis + world up keeps
-// the lean roll-independent. Engine rewrites a clean Location each frame, so this
-// never accumulates.
-bool TryAddPosition(uintptr_t loc_addr, float cleanYawDeg,
-                    float sway, float heave, float surge) {
+// LeanWorldOffset owns the axis mapping; this only performs the guarded write.
+// The engine rewrites a clean Location each frame, so this never accumulates.
+bool TryAddPosition(uintptr_t loc_addr, const LeanOffsetUU& delta) {
     __try {
-        const float yr = cleanYawDeg * 0.01745329252f;  // deg -> rad
-        const float cy = std::cos(yr), sy = std::sin(yr);
-        const float fwd = surge * kMetersToUU;
-        const float rgt = sway  * kMetersToUU;
-        const float up  = heave * kMetersToUU;
         auto* v = reinterpret_cast<FVector*>(loc_addr);
-        v->X = v->X + (cy * fwd - sy * rgt);  // UE forward (+X)
-        v->Y = v->Y + (sy * fwd + cy * rgt);  // UE right   (+Y)
-        v->Z = v->Z + up;                     // UE up      (+Z)
+        v->X = v->X + delta.x;
+        v->Y = v->Y + delta.y;
+        v->Z = v->Z + delta.z;
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
@@ -155,7 +143,8 @@ void __fastcall UpdateCameraDetour(void* pcm, float dt) {
                     FRotator clean{};
                     if (SafeRead(base + rotOff, clean)) cleanYaw = clean.Yaw;
                 }
-                TryAddPosition(base + locOff, cleanYaw, posn.x, posn.y, posn.z);
+                TryAddPosition(base + locOff,
+                               LeanWorldOffset(cleanYaw, posn.x, posn.y, posn.z));
             }
         }
     }

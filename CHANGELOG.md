@@ -6,6 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Leaning forward now gets its full 0.40m of camera travel instead of 0.10m,
+  and leaning back gets 0.10m instead of 0.40m. `HeadTracking.ini` carried
+  `InvertZ = true` to reach UE's +X-forward axes, but `PositionProcessor`
+  applies inversion before its asymmetric `LimitZ` / `LimitZBack` clamp, so
+  each lean direction was clamped on the other one's budget. The flip into
+  engine axes now happens where the offset is written to the camera cache. The
+  key is renamed `InvertTrackerZ` and defaults to false, because an existing
+  `HeadTracking.ini` carrying `InvertZ = true` would otherwise reverse the lean
+  outright; it now means only what its name says, a tracker whose depth axis
+  runs backwards
 - Third-party licence compliance. The `.asi` statically links MinHook, whose
   BSD-2-Clause requires its copyright notice and disclaimer to travel with the
   binary, and MinHook in turn carries the separately copyrighted Hacker

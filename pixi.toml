@@ -22,5 +22,6 @@ clean-all = { cmd = "powershell -Command \"if (Test-Path 'build') { Remove-Item 
 update-deps = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/update-deps.ps1" }
 package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build"] }
 install = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 Release", depends-on = ["build"] }
+test = { cmd = "ctest --test-dir build -C Release --output-on-failure", depends-on = ["build"] }
 uninstall = { cmd = "cmd /c scripts\\uninstall.cmd /y" }
 release = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/release.ps1" }

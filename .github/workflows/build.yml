@@ -33,6 +33,10 @@ jobs:
       - name: Setup pixi
         uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11 # v0.9.6
 
+      - name: Test
+        shell: pwsh
+        run: pixi run test
+
       # Build + package through the SAME command a developer runs locally. All
       # build logic lives in the pixi task chain (cmake configure -> build ->
       # package); the workflow owns none, so local and CI can't drift.
