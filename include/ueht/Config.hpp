@@ -5,6 +5,7 @@
 
 #include "cameraunlock/data/tracking_pose.h"
 #include "cameraunlock/data/position_settings.h"
+#include "cameraunlock/math/smoothing_utils.h"
 
 namespace ueht {
 
@@ -23,8 +24,8 @@ struct Config {
     // Smoothing is picked per connection from the packet source address: a
     // tracker on this machine (loopback) uses local_smoothing, a remote network
     // device uses remote_smoothing. Both cover rotation and position.
-    float    local_smoothing  = 0.0f;
-    float    remote_smoothing = 0.15f;
+    float    local_smoothing  = static_cast<float>(cameraunlock::math::kDefaultLocalSmoothing);
+    float    remote_smoothing = static_cast<float>(cameraunlock::math::kDefaultRemoteSmoothing);
     float    deadzone      = 0.5f;
 
     // [hotkeys] - nav-cluster virtual-key names matched by hotkey_poller.
@@ -77,10 +78,10 @@ struct Config {
     // the old InvertZ = true falls back to this default instead of reversing
     // the lean.
     bool     invert_tracker_z = false;
-    float    pos_limit_x      = 0.30f;
-    float    pos_limit_y      = 0.20f;
-    float    pos_limit_z      = 0.40f;   // forward lean (generous)
-    float    pos_limit_z_back = 0.10f;   // backward lean (restricted, avoids clipping)
+    float    pos_limit_x      = cameraunlock::PositionSettings{}.limit_x;
+    float    pos_limit_y      = cameraunlock::PositionSettings{}.limit_y;
+    float    pos_limit_z      = cameraunlock::PositionSettings{}.limit_z;       // forward lean (generous)
+    float    pos_limit_z_back = cameraunlock::PositionSettings{}.limit_z_back;  // backward lean (restricted, avoids clipping)
     uint32_t location_offset  = 0x3F8;   // PCM-relative FVector the renderer reads; 0 = off
 
     // [debug]
