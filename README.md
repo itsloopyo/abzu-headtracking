@@ -15,6 +15,7 @@ An unofficial head tracking mod for ABZU that moves the camera with your head wh
 
 - **Decoupled look** - head tracking moves only the rendered camera. Your swim direction and every game control stay untouched, so the diver keeps heading where you steer no matter where you look.
 - **6DOF positional tracking** - lean and peek with head position, also injected into the rendered view only.
+- **Works with any OpenTrack compatible tracker** - free options available for PC, iOS and Android
 - **Rotation + position DOF modes** - cycle between full 6DOF, rotation-only, and position-only in-game.
 - **Frame-rate-independent smoothing** and sample-rate-agnostic interpolation.
 
@@ -25,6 +26,13 @@ An unofficial head tracking mod for ABZU that moves the camera with your head wh
 - Windows 10 or 11 (64-bit).
 
 ## Installation
+
+### Lopari
+
+Once this mod is available in Lopari, download [Lopari](https://lopari.app), choose **ABZÛ**, and click
+**Play with head tracking**.
+
+### Standalone Installer
 
 1. Download the latest `AbzuHeadTracking-vX.Y.Z-installer.zip` from the [Releases](https://github.com/itsloopyo/abzu-headtracking/releases) page.
 2. Extract the ZIP anywhere.
