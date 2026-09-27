@@ -2,22 +2,13 @@
 
 ![ABZU running with this mod](https://raw.githubusercontent.com/itsloopyo/abzu-headtracking/main/assets/readme-clip.gif)
 
-An unofficial head tracking mod for ABZU that moves the camera with your head while your mouse or controller keeps control of movement, driven by OpenTrack over UDP, with no VR headset required.
-
-> [!CAUTION]
-> ## Experimental prototype - expect missing core features
->
-> This is **not** a finished mod.
->
-> Current builds may only test whether head tracking can drive the camera. Bug fixes and core features like decoupled look/aim, independent reticle behavior, correct shot direction, off-screen reticle support, movement handling, and comfort tuning may be missing at this early stage of development.
+An unofficial head tracking mod for ABZU that moves the camera with your head while your mouse or controller keeps control of movement, driven by a webcam, phone, or any OpenTrack compatible tracker, with no VR headset required.
 
 ## Features
 
 - **Decoupled look** - head tracking moves only the rendered camera. Your swim direction and every game control stay untouched, so the diver keeps heading where you steer no matter where you look.
 - **6DOF positional tracking** - lean and peek with head position, also injected into the rendered view only.
 - **Works with any OpenTrack compatible tracker** - free options available for PC, iOS and Android
-- **Rotation + position DOF modes** - cycle between full 6DOF, rotation-only, and position-only in-game.
-- **Frame-rate-independent smoothing** and sample-rate-agnostic interpolation.
 
 ## Requirements
 
@@ -29,7 +20,7 @@ An unofficial head tracking mod for ABZU that moves the camera with your head wh
 
 ### Lopari
 
-Once this mod is available in Lopari, download [Lopari](https://lopari.app), choose **ABZÛ**, and click
+Download [Lopari](https://lopari.app), choose **ABZÛ**, and click
 **Play with head tracking**.
 
 ### Standalone Installer
