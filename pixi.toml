@@ -27,5 +27,11 @@ install = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 R
 # provenance check first: the differential test proves nothing once a file it compiles has
 # drifted from the build it names.
 test = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-differential-provenance.ps1 && ctest --test-dir build -C Release --output-on-failure", depends-on = ["build"] }
+# Rewrites the committed HeadTracking.ini, the table's fresh render (the bytes the mod creates
+# as CameraUnlock.ini at first launch), and the launcher manifest's config descriptor.
+render-config = { cmd = "build/Release/abzuht_canonical_config_tests.exe --render-config HeadTracking.ini && node cameraunlock-core/scripts/encode-seed.mjs", depends-on = ["build"] }
+# Checks the newest release/*-installer.zip against the launcher manifest contract, and the
+# Nexus ZIP for a config it must not carry.
+validate-manifest = "node cameraunlock-core/scripts/validate-manifest.mjs"
 uninstall = { cmd = "cmd /c scripts\\uninstall.cmd /y" }
 release = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/release.ps1" }

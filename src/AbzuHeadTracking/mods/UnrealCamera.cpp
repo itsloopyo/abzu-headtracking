@@ -8,7 +8,6 @@
 #include "utility/SafeMemory.hpp"
 
 #include "cameraunlock/hooks/hook_manager.h"
-#include "cameraunlock/math/angle_utils.h"
 #include "cameraunlock/math/quat4.h"
 
 #include <windows.h>
@@ -19,25 +18,6 @@
 namespace ueht {
 
 namespace {
-/// Normalize angle to (-180, 180].
-float Wrap180(float deg) {
-    return cameraunlock::math::NormalizeAngle(deg);
-}
-
-/// SEH-guarded slot write. Free function so the calling method can hold C++
-/// objects with destructors (MSVC C2712: __try can't coexist with object
-/// unwinding in the same function, even with /EHa).
-bool TryWriteRotation(FRotator* slot, float pitch, float yaw, float roll) {
-    __try {
-        slot->Pitch = pitch;
-        slot->Yaw   = yaw;
-        slot->Roll  = roll;
-        return true;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
-
 // --- Decoupled (UpdateCamera) hook -----------------------------------------
 //
 // UE4 APlayerCameraManager::UpdateCamera(float DeltaTime) is the per-frame,
@@ -152,22 +132,18 @@ void __fastcall UpdateCameraDetour(void* pcm, float dt) {
     const auto pose = tracking->CurrentPose();
     if (!pose.IsValid()) return;
 
+    // ABZU's roll runs opposite the tracker's. Every build shipped
+    // InvertRoll=true to correct it, and the correction lives here now.
+    const float roll = -pose.roll;
     const bool worldYaw = tracking->WorldSpaceYaw();
     const auto injectAt = [&](uint32_t off) {
         if (off == 0) return;
-        if (worldYaw) TryAddDelta (base + off, pose.pitch, pose.yaw, pose.roll);
-        else          TryApplyLocal(base + off, pose.pitch, pose.yaw, pose.roll);
+        if (worldYaw) TryAddDelta (base + off, pose.pitch, pose.yaw, roll);
+        else          TryApplyLocal(base + off, pose.pitch, pose.yaw, roll);
     };
     injectAt(rotOff);
     injectAt(g_cacheOffset.load(std::memory_order_relaxed));
 }
-
-UnrealCamera::Mode ParseMode(const std::string& s) {
-    if (s == "updatecamera" || s == "UpdateCamera") return UnrealCamera::Mode::UpdateCamera;
-    return UnrealCamera::Mode::ControlRotation;
-}
-
-constexpr int kDiagSamples = 20;
 
 uintptr_t HostModuleBase() {
     return reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
@@ -176,18 +152,12 @@ uintptr_t HostModuleBase() {
 }  // namespace
 
 std::optional<std::string> UnrealCamera::OnInitialize() {
-    m_mode = ParseMode(Framework::Get().Cfg().camera_mode);
-    UEHT_LOG(Info, "UnrealCamera: camera_mode=%s; deferring resolution until engine is alive.",
-             m_mode == Mode::UpdateCamera ? "updatecamera (decoupled)" : "controlrotation (coupled)");
+    UEHT_LOG(Info, "UnrealCamera: deferring resolution until the engine is alive.");
     return std::nullopt;
 }
 
 void UnrealCamera::OnFrame() {
-    if (m_mode == Mode::UpdateCamera) {
-        TickDecoupled();
-    } else {
-        TickControlRotation();
-    }
+    TickDecoupled();
 }
 
 void UnrealCamera::TickDecoupled() {
@@ -213,139 +183,8 @@ void UnrealCamera::TickDecoupled() {
     // Injection itself happens inside UpdateCameraDetour on the game thread.
 }
 
-void UnrealCamera::TickControlRotation() {
-    auto* slot = m_rotationSlot.load(std::memory_order_acquire);
-    if (slot == nullptr) {
-        // Try to resolve every ~120 frames to avoid hammering the scanner.
-        if ((m_framesSinceResolve++ % 120) == 0) {
-            if (Resolve()) {
-                slot = m_rotationSlot.load(std::memory_order_acquire);
-                if (!m_cameraSlotReported) {
-                    m_cameraSlotReported = true;
-                    UEHT_LOG(Info, "UnrealCamera: camera rotation slot at %p", slot);
-                }
-            }
-        }
-        if (slot == nullptr) return;
-    }
-
-    if (!m_tracking.Enabled()) return;
-
-    const auto pose = m_tracking.CurrentPose();
-    if (!pose.IsValid()) return;
-
-    // Each frame we read the slot, subtract our last-applied delta to recover
-    // the engine's intended rotation, then write engine_intent + new delta.
-    static thread_local FRotator s_lastDelta{};
-
-    // Read through an SEH guard: a level transition can free the
-    // PlayerController, leaving this slot dangling. An unguarded read would
-    // fault here and crash the host before the write guard below could catch
-    // it and re-resolve.
-    FRotator current{};
-    if (!SafeRead(reinterpret_cast<uintptr_t>(slot), current)) {
-        NoteSlotFault("UnrealCamera: rotation slot faulted on read; re-resolving.");
-        m_rotationSlot.store(nullptr, std::memory_order_release);
-        s_lastDelta = {};
-        return;
-    }
-
-    // Diagnostic: log the slot value BEFORE our write to see whether UE has been
-    // overwriting our previous write (architectural test). Capped per session:
-    // the answer is visible in the first few samples, and left uncapped this one
-    // line is ~180 KB/hour of the log a user is asked to send us.
-    static thread_local int s_diagCounter = 0;
-    const bool diag = (s_diagCounter < 300 * kDiagSamples) && ((s_diagCounter++ % 300) == 0);
-
-    FRotator engineIntent;
-    engineIntent.Pitch = Wrap180(current.Pitch - s_lastDelta.Pitch);
-    engineIntent.Yaw   = Wrap180(current.Yaw   - s_lastDelta.Yaw);
-    engineIntent.Roll  = Wrap180(current.Roll  - s_lastDelta.Roll);
-
-    FRotator delta;
-    delta.Pitch = pose.pitch;
-    delta.Yaw   = pose.yaw;
-    delta.Roll  = pose.roll;
-
-    const FRotator wrote{engineIntent.Pitch + delta.Pitch,
-                         engineIntent.Yaw   + delta.Yaw,
-                         engineIntent.Roll  + delta.Roll};
-
-    if (!TryWriteRotation(slot, wrote.Pitch, wrote.Yaw, wrote.Roll)) {
-        NoteSlotFault("UnrealCamera: rotation slot faulted on write; re-resolving.");
-        m_rotationSlot.store(nullptr, std::memory_order_release);
-        s_lastDelta = {};
-        return;
-    }
-    if (diag) {
-        UEHT_LOG(Info,
-            "UnrealCamera diag: pre=(P=%.2f Y=%.2f R=%.2f) lastDelta=(P=%.2f Y=%.2f R=%.2f) "
-            "engineIntent=(P=%.2f Y=%.2f R=%.2f) newDelta=(P=%.2f Y=%.2f R=%.2f) wrote=(P=%.2f Y=%.2f R=%.2f)",
-            current.Pitch, current.Yaw, current.Roll,
-            s_lastDelta.Pitch, s_lastDelta.Yaw, s_lastDelta.Roll,
-            engineIntent.Pitch, engineIntent.Yaw, engineIntent.Roll,
-            delta.Pitch, delta.Yaw, delta.Roll,
-            wrote.Pitch, wrote.Yaw, wrote.Roll);
-    }
-
-    s_lastDelta = delta;
-}
-
-// A dangling slot faults, re-resolves, and faults again forever, so the warn is
-// only useful for the first few cycles. Report the cap so the log says the
-// faults continued rather than implying they stopped.
-void UnrealCamera::NoteSlotFault(const char* msg) {
-    constexpr int kMaxSlotFaultLogs = 5;
-    if (m_slotFaults >= kMaxSlotFaultLogs) return;
-    ++m_slotFaults;
-    log::Warn(msg);
-    if (m_slotFaults == kMaxSlotFaultLogs) {
-        UEHT_LOG(Warn, "UnrealCamera: further slot faults will not be logged.");
-    }
-}
-
 void UnrealCamera::OnShutdown() {
     g_hookTracking = nullptr;  // stop the detour touching tracking after teardown
-}
-
-// ---------------------------------------------------------------------------
-// ControlRotation resolution (default path)
-// ---------------------------------------------------------------------------
-
-bool UnrealCamera::Resolve() {
-    const auto version = ue::DetectEngineVersion();
-    if (!version.valid()) {
-        if (!m_resolveLogged) {
-            UEHT_LOG(Warn, "UnrealCamera: host EXE doesn't report a UE major version.");
-            m_resolveLogged = true;
-        }
-        return false;
-    }
-
-    const auto offsets = ue::OffsetsFor(version);
-    if (!offsets) {
-        if (!m_resolveLogged) {
-            UEHT_LOG(Warn, "UnrealCamera: no offset table for UE %s.", version.ToString().c_str());
-            m_resolveLogged = true;
-        }
-        return false;
-    }
-
-    const auto gengine = ue::LocateGEngine();
-    if (gengine == 0) {
-        if (!m_resolveLogged) {
-            UEHT_LOG(Warn, "UnrealCamera: GEngine not located yet for UE %s.",
-                     version.ToString().c_str());
-            m_resolveLogged = true;
-        }
-        return false;
-    }
-
-    FRotator* rot = WalkToRotation(gengine, *offsets);
-    if (!rot) return false;
-    m_rotationSlot.store(rot, std::memory_order_release);
-    m_resolveLogged = false;
-    return true;
 }
 
 uintptr_t UnrealCamera::WalkToPlayerController(uintptr_t gengine, const ue::EngineOffsets& o) {
@@ -392,20 +231,6 @@ uintptr_t UnrealCamera::WalkToPlayerController(uintptr_t gengine, const ue::Engi
     }
     m_walkStall = Stage::None;
     return player_controller;
-}
-
-FRotator* UnrealCamera::WalkToRotation(uintptr_t gengine, const ue::EngineOffsets& o) {
-    const uintptr_t pc = WalkToPlayerController(gengine, o);
-    if (pc == 0) return nullptr;
-    const uintptr_t rot_addr = pc + o.controller_to_control_rotation;
-    // Only reached from Resolve(), which the fault path re-runs indefinitely on
-    // a slot that keeps faulting. m_cameraSlotReported is still false on the first
-    // success, so this reports once and stays quiet through any re-resolve.
-    if (!m_cameraSlotReported) {
-        UEHT_LOG(Info, "WalkToRotation: PC=0x%llX -> ControlRotation @ 0x%llX",
-                 (unsigned long long)pc, (unsigned long long)rot_addr);
-    }
-    return reinterpret_cast<FRotator*>(rot_addr);
 }
 
 // ---------------------------------------------------------------------------

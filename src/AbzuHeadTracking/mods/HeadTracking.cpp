@@ -5,103 +5,54 @@
 
 #include "cameraunlock/math/smoothing_utils.h"
 
-#include <cctype>
-#include <cstring>
+#include "cameraunlock/input/key_binding_registration.h"
+#include "cameraunlock/input/key_bindings.h"
 
-#include <windows.h>
-
-namespace {
-/// True while either Control and either Shift are held. The chord letter's own
-/// key-down edge is tracked by the poller; this only gates the action so a bare
-/// letter press never fires it.
-bool ChordHeld() {
-    constexpr int kDown = 0x8000;
-    return (GetAsyncKeyState(VK_CONTROL) & kDown) && (GetAsyncKeyState(VK_SHIFT) & kDown);
-}
-}  // namespace
+#include <functional>
+#include <stdexcept>
+#include <string>
+#include <utility>
 
 namespace ueht {
 
 namespace {
-/// Map a friendly key name from ueht.ini to a Win32 VK_ code.
-/// Handles "F1".."F24", single A-Z/0-9, and a few common names.
-int ParseVk(const std::string& name) {
-    using namespace cameraunlock::input;
-    if (name.empty()) return 0;
-
-    std::string n;
-    n.reserve(name.size());
-    for (char c : name) n.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-
-    // Numeric VK literal, e.g. "0x22" or "34" (base 0 honours the 0x prefix).
-    if (std::isdigit(static_cast<unsigned char>(n[0]))) {
-        int v = static_cast<int>(std::strtol(n.c_str(), nullptr, 0));
-        if (v > 0 && v <= 0xFF) return v;
-    }
-    if (n.size() >= 2 && n[0] == 'F' && std::isdigit(static_cast<unsigned char>(n[1]))) {
-        int idx = std::atoi(n.c_str() + 1);
-        if (idx >= 1 && idx <= 24) return 0x6F + idx;  // VK_F1 = 0x70
-    }
-    if (n.size() == 1) {
-        char c = n[0];
-        if (c >= 'A' && c <= 'Z') return c;
-        if (c >= '0' && c <= '9') return c;
-    }
-    if (n == "HOME")     return VK::Home;
-    if (n == "END")      return VK::End;
-    if (n == "INSERT")   return VK::Insert;
-    if (n == "DELETE")   return VK::Delete;
-    if (n == "SPACE")    return VK::Space;
-    if (n == "PAGEUP")   return 0x21;  // VK_PRIOR
-    if (n == "PAGEDOWN") return 0x22;  // VK_NEXT
-    if (n == "ESCAPE" || n == "ESC") return VK::Escape;
-    return 0;
+/// Puts one hotkey list from CameraUnlock.ini on the poller.
+void Register(cameraunlock::input::HotkeyPoller& poller, const std::string& list, std::function<void()> action) {
+    const auto parsed = cameraunlock::input::ParseKeyBindings(list);
+    if (!parsed.ok()) throw std::logic_error("hotkey list '" + list + "' does not parse: " + parsed.error);
+    cameraunlock::input::RegisterKeyBindings(poller, parsed.bindings, std::move(action));
 }
 }  // namespace
 
 std::optional<std::string> HeadTracking::OnInitialize() {
     const auto& cfg = Framework::Get().Cfg();
 
+    m_enabled.store(cfg.enable_on_startup, std::memory_order_release);
     m_worldSpaceYaw.store(cfg.world_space_yaw, std::memory_order_release);
-    m_dofMode.store(cfg.position_enabled ? DofMode::SixDof : DofMode::RotationOnly,
-                    std::memory_order_release);
+    m_mode.store(cameraunlock::DecodeTrackingMode(cfg.rotation_enabled, cfg.position_enabled).value(),
+                 std::memory_order_release);
 
-    m_processor.SetSensitivity(cfg.AsSensitivity());
-    m_processor.SetDeadzone(cfg.AsDeadzone());
+    // The processor's sensitivity and deadzone stay at identity: the tracker
+    // shapes the pose. Position carries the same two smoothing values as
+    // rotation; the processor's connection flag picks which one applies.
     m_processor.SetLocalSmoothing(cfg.local_smoothing);
     m_processor.SetRemoteSmoothing(cfg.remote_smoothing);
-
-    // AsPositionSettings carries both smoothing values, so position uses the
-    // same connection-selected smoothing as rotation.
-    m_posProcessor.SetSettings(cfg.AsPositionSettings());
+    m_posProcessor.SetSettings(cfg.position);
 
     m_receiver = std::make_unique<cameraunlock::UdpReceiver>();
     m_receiver->SetLog([](const std::string& m){ UEHT_LOG(Info, "[udp] %s", m.c_str()); });
-    if (!m_receiver->Start(cfg.udp_port)) {
+    if (!m_receiver->Start(static_cast<uint16_t>(cfg.udp_port))) {
         // Non-fatal - UdpReceiver schedules its own retry loop when the port
         // is held. We log and continue; pose simply stays zero until it binds.
-        UEHT_LOG(Warn, "OpenTrack UDP %u not bound yet; receiver will retry.", cfg.udp_port);
+        UEHT_LOG(Warn, "OpenTrack UDP %d not bound yet; receiver will retry.", cfg.udp_port);
     } else {
-        UEHT_LOG(Info, "Listening for OpenTrack on UDP %u", cfg.udp_port);
+        UEHT_LOG(Info, "Listening for OpenTrack on UDP %d", cfg.udp_port);
     }
 
     m_hotkeys = std::make_unique<cameraunlock::input::HotkeyPoller>();
-    // Nav-cluster bindings (End / PageUp / PageDown) from config.
-    if (int vk = ParseVk(cfg.toggle_key); vk != 0) {
-        m_hotkeys->SetToggleKey(vk, [this]{ SetEnabled(!Enabled()); });
-    }
-    if (int vk = ParseVk(cfg.yaw_mode_key); vk != 0) {
-        m_hotkeys->AddHotkey(vk, [this]{ ToggleYawMode(); });
-    }
-    if (int vk = ParseVk(cfg.position_key); vk != 0) {
-        m_hotkeys->AddHotkey(vk, [this]{ CycleDofMode(); });
-    }
-    // Chord equivalents (Ctrl+Shift+Y toggle, Ctrl+Shift+G DOF-mode cycle,
-    // Ctrl+Shift+H yaw mode) for keyboards without a nav cluster.
-    // The poller edge-detects the letter; ChordHeld gates it.
-    m_hotkeys->AddHotkey('Y', [this]{ if (ChordHeld()) SetEnabled(!Enabled()); });
-    m_hotkeys->AddHotkey('G', [this]{ if (ChordHeld()) CycleDofMode(); });
-    m_hotkeys->AddHotkey('H', [this]{ if (ChordHeld()) ToggleYawMode(); });
+    Register(*m_hotkeys, cfg.toggle_key_name, [this]{ SetEnabled(!Enabled()); });
+    Register(*m_hotkeys, cfg.cycle_tracking_mode_key_name, [this]{ CycleTrackingMode(); });
+    Register(*m_hotkeys, cfg.yaw_mode_key_name, [this]{ ToggleYawMode(); });
     m_hotkeys->Start();
 
     // Seed the locality flag so the first frame already uses the right value.
@@ -237,22 +188,29 @@ void HeadTracking::SyncConnectionLocality() {
              isRemote ? "remote" : "local", effective);
 }
 
-void HeadTracking::CycleDofMode() {
-    DofMode next;
+void HeadTracking::CycleTrackingMode() {
+    using cameraunlock::TrackingMode;
+    TrackingMode next;
     const char* label;
-    switch (GetDofMode()) {
-        case DofMode::SixDof:       next = DofMode::RotationOnly; label = "3DOF rotation only"; break;
-        case DofMode::RotationOnly: next = DofMode::PositionOnly; label = "3DOF position only"; break;
-        default:                    next = DofMode::SixDof;       label = "6DOF (rotation + position)"; break;
+    switch (GetTrackingMode()) {
+        case TrackingMode::RotationAndPosition: next = TrackingMode::RotationOnly;        label = "3DOF rotation only"; break;
+        case TrackingMode::RotationOnly:        next = TrackingMode::PositionOnly;        label = "3DOF position only"; break;
+        default:                                next = TrackingMode::RotationAndPosition; label = "6DOF (rotation + position)"; break;
     }
-    m_dofMode.store(next, std::memory_order_release);
-    UEHT_LOG(Info, "DOF mode: %s", label);
+    m_mode.store(next, std::memory_order_release);
+    UEHT_LOG(Info, "Tracking mode: %s", label);
+    const cameraunlock::TrackingModeChannels channels = cameraunlock::EncodeTrackingMode(next);
+    config::Save([channels](Config& c) {
+        c.rotation_enabled = channels.rotation_enabled;
+        c.position_enabled = channels.position_enabled;
+    });
 }
 
 void HeadTracking::ToggleYawMode() {
     const bool world = !m_worldSpaceYaw.load(std::memory_order_acquire);
     m_worldSpaceYaw.store(world, std::memory_order_release);
     UEHT_LOG(Info, "Yaw mode: %s", world ? "world-space (horizon-locked)" : "camera-local");
+    config::Save([world](Config& c) { c.world_space_yaw = world; });
 }
 
 }  // namespace ueht

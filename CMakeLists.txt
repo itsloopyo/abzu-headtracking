@@ -49,11 +49,11 @@ add_subdirectory(${ABZU_CAMERAUNLOCK_DIR} ${CMAKE_BINARY_DIR}/_deps/cameraunlock
 
 add_subdirectory(src/AbzuHeadTracking)
 
-# Behaviour lock for the 6DOF lean boundary, driven by the shipped
-# HeadTracking.ini rather than the struct defaults. A separate executable that
-# links none of the hook or engine-walk machinery, so `pixi run test` runs
-# anywhere the mod builds, with no game installed.
-option(ABZU_BUILD_TESTS "Build the lean-budget behaviour tests" ON)
+# Behaviour lock for the 6DOF lean boundary, the canonical config tests and the
+# config differential test. Separate executables that link none of the hook or
+# engine-walk machinery, so `pixi run test` runs anywhere the mod builds, with
+# no game installed.
+option(ABZU_BUILD_TESTS "Build the behaviour and config tests" ON)
 if(ABZU_BUILD_TESTS)
     enable_testing()
     add_executable(abzuht_lean_tests
@@ -67,14 +67,35 @@ if(ABZU_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
-    target_compile_definitions(abzuht_lean_tests PRIVATE
-        ABZUHT_SHIPPED_INI="${CMAKE_CURRENT_SOURCE_DIR}/HeadTracking.ini"
-    )
     target_link_libraries(abzuht_lean_tests PRIVATE cameraunlock)
     if(MSVC)
         target_compile_options(abzuht_lean_tests PRIVATE /W4 /permissive- /EHsc)
     endif()
     add_test(NAME lean_budget COMMAND abzuht_lean_tests)
+
+    # The committed HeadTracking.ini against the table, what the owner creates on
+    # a first start and on the first start after an update, and what a toggle's
+    # save changes. `--render-config <path>` is pixi run render-config.
+    add_executable(abzuht_canonical_config_tests
+        tests/canonical_config_tests.cpp
+        src/AbzuHeadTracking/Config.cpp
+        src/AbzuHeadTracking/utility/Logging.cpp
+        src/legacy_config/legacy_config.cpp
+    )
+    target_include_directories(abzuht_canonical_config_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/AbzuHeadTracking
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_compile_definitions(abzuht_canonical_config_tests PRIVATE
+        ABZU_COMMITTED_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/HeadTracking.ini"
+        ABZU_DIFFERENTIAL_DATA="${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential/data"
+        ABZU_DEFAULTS_FIXTURE="${ABZU_CAMERAUNLOCK_DIR}/../data/fixtures/canonical-ini/global/Defaults.ini")
+    target_link_libraries(abzuht_canonical_config_tests PRIVATE cameraunlock)
+    if(MSVC)
+        target_compile_options(abzuht_canonical_config_tests PRIVATE /W4 /permissive- /EHsc)
+    endif()
+    add_test(NAME canonical_config COMMAND abzuht_canonical_config_tests)
 
     # The config differential test. The oracle is the newest published build's reader, with
     # ParseVk and ParseMode and the core sources they compiled, copied verbatim into
@@ -101,6 +122,7 @@ if(ABZU_BUILD_TESTS)
 
     add_executable(abzuht_config_differential_tests
         tests/config_differential/differential_tests.cpp
+        src/AbzuHeadTracking/Config.cpp
         src/AbzuHeadTracking/utility/Logging.cpp
         src/legacy_config/legacy_config.cpp
     )
@@ -117,4 +139,7 @@ if(ABZU_BUILD_TESTS)
         target_compile_options(abzuht_config_differential_tests PRIVATE /W4 /permissive- /EHsc)
     endif()
     add_test(NAME config_differential COMMAND abzuht_config_differential_tests)
+    # Every corpus input is migrated three times through real files, which takes longer than
+    # ctest's default 1500 seconds on a slow disk.
+    set_tests_properties(config_differential PROPERTIES TIMEOUT 7200)
 endif()

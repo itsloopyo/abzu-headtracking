@@ -12,7 +12,6 @@
 #include "utility/Logging.hpp"
 
 #include "ueht/Version.hpp"
-#include "cameraunlock/config/ini_reader.h"
 #include "cameraunlock/hooks/hook_manager.h"
 
 namespace ueht {
@@ -36,16 +35,12 @@ std::wstring HostExePath() {
 
 // A bare filename in [Logging] LogPath must land next to the host EXE, which is
 // where the README tells users to look. Resolving it against the process CWD
-// instead puts it wherever the launcher happened to start the game. Returns
-// empty when the EXE path cannot be resolved; the caller says so rather than
-// dropping a log somewhere unrelated.
+// instead puts it wherever the launcher happened to start the game.
 std::string ResolveLogPath(const std::string& configured) {
     const std::string name = configured.empty() ? "HeadTracking.log" : configured;
     std::filesystem::path p(name);
     if (p.is_absolute()) return name;
-    const std::wstring exe = HostExePath();
-    if (exe.empty()) return {};
-    return (std::filesystem::path(exe).parent_path() / p).string();
+    return (std::filesystem::path(HostExePath()).parent_path() / p).string();
 }
 
 }  // namespace
@@ -71,40 +66,23 @@ bool Framework::Initialize() {
 }
 
 bool Framework::DoInitialize() {
-    // The log opens BEFORE the config is parsed. LoadFromFile emits the
-    // smoothing validation and retired-key warnings, and the logger drops any
-    // line written while the file is still closed, so loading first threw all
-    // of that away. The two [Logging] keys are therefore read on their own
-    // first; LoadFromFile re-reads them into m_config a moment later.
-    const std::string iniPath = Config::DefaultIniPathNextToHostExe();
-    std::error_code iniEc;
-    const bool iniFound = std::filesystem::exists(iniPath, iniEc);
-
-    bool logToFile = m_config.log_to_file;
-    std::string logPath = m_config.log_path;
-    if (iniFound) {
-        cameraunlock::IniReader logIni;
-        if (logIni.Open(iniPath)) {
-            logToFile = logIni.ReadBool("Logging", "LogToFile", logToFile);
-            logPath   = logIni.ReadString("Logging", "LogPath", logPath.c_str());
-        }
-    }
-    if (logToFile) {
-        const std::string resolved = ResolveLogPath(logPath);
-        if (resolved.empty()) {
-            UEHT_LOG(Error, "Could not resolve the host EXE path; no log file will be written");
-        } else {
-            log::Init(resolved);
-        }
-    }
-
+    // The log's own settings are in CameraUnlock.ini, so the config loads first.
+    // The logger keeps every line written before Init and writes them to the file
+    // Init opens, so nothing the load reports is lost.
     UEHT_LOG(Info, "%s %s starting up", kProductName, kVersion);
-    if (iniFound) {
-        UEHT_LOG(Info, "Loading config from %s", iniPath.c_str());
-    } else {
-        UEHT_LOG(Info, "No config at %s; using defaults", iniPath.c_str());
+    const std::wstring exe = HostExePath();
+    if (exe.empty()) {
+        UEHT_LOG(Error, "Could not resolve the host EXE path; CameraUnlock.ini cannot be found");
+        log::Init({});
+        return false;
     }
-    Config::LoadFromFile(iniPath, m_config);
+    m_config = config::Load(std::filesystem::path(exe).parent_path().wstring());
+
+    if (m_config.log_to_file) {
+        log::Init(ResolveLogPath(m_config.log_path));
+    } else {
+        log::Init({});
+    }
 
     // MinHook is shared between cameraunlock_hooks and our D3D hooks.
     using cameraunlock::hooks::HookManager;

@@ -13,6 +13,7 @@
 #include "cameraunlock/processing/position_processor.h"
 #include "cameraunlock/processing/tracking_processor.h"
 #include "cameraunlock/protocol/udp_receiver.h"
+#include "cameraunlock/tracking/tracking_mode.h"
 
 namespace ueht {
 
@@ -47,21 +48,17 @@ public:
     bool Enabled() const { return m_enabled.load(std::memory_order_acquire); }
     void SetEnabled(bool e) { m_enabled.store(e, std::memory_order_release); }
 
-    /// Which degrees of freedom are live. PageUp / Ctrl+Shift+G cycles these.
-    enum class DofMode {
-        SixDof,        // rotation + position
-        RotationOnly,  // 3DOF: head rotation only
-        PositionOnly,  // 3DOF: head position only
-    };
-    DofMode GetDofMode() const { return m_dofMode.load(std::memory_order_acquire); }
-    bool PositionEnabled() const { return GetDofMode() != DofMode::RotationOnly; }
-    bool RotationEnabled() const { return GetDofMode() != DofMode::PositionOnly; }
-    /// Cycle 6DOF -> rotation-only -> position-only -> 6DOF.
-    void CycleDofMode();
+    /// Which degrees of freedom are live. The mode key cycles 6DOF ->
+    /// rotation-only -> position-only -> 6DOF and saves the mode.
+    cameraunlock::TrackingMode GetTrackingMode() const { return m_mode.load(std::memory_order_acquire); }
+    bool PositionEnabled() const { return GetTrackingMode() != cameraunlock::TrackingMode::RotationOnly; }
+    bool RotationEnabled() const { return GetTrackingMode() != cameraunlock::TrackingMode::PositionOnly; }
+    void CycleTrackingMode();
 
     /// true = horizon-locked (world up) yaw; false = camera-local yaw.
     /// Read by UnrealCamera's hook each frame to pick the rotation-application path.
     bool WorldSpaceYaw() const { return m_worldSpaceYaw.load(std::memory_order_acquire); }
+    /// Flips the yaw mode and saves it.
     void ToggleYawMode();
 
 private:
@@ -87,9 +84,10 @@ private:
     // Last locality pushed to the processors; drives LocalSmoothing vs RemoteSmoothing.
     bool    m_isRemoteConnection = false;
 
+    // Initialised from the config at startup.
     std::atomic<bool> m_enabled{true};
-    std::atomic<bool> m_worldSpaceYaw{true};   // initialized from config at startup
-    std::atomic<DofMode> m_dofMode{DofMode::SixDof};  // initialized from config at startup
+    std::atomic<bool> m_worldSpaceYaw{true};
+    std::atomic<cameraunlock::TrackingMode> m_mode{cameraunlock::TrackingMode::RotationAndPosition};
 
     // Latest processed pose, published from OnFrame.
     mutable std::atomic<float> m_outYaw  {0.0f};

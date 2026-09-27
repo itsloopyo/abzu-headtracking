@@ -12,7 +12,7 @@
 :: --- CONFIG BLOCK ---
 set "GAME_ID=abzu"
 set "MOD_DISPLAY_NAME=Abzu Head Tracking"
-set "MOD_DLLS=AbzuHeadTracking.asi HeadTracking.ini"
+set "MOD_DLLS=AbzuHeadTracking.asi"
 set "MOD_INTERNAL_NAME=AbzuHeadTracking"
 set "MOD_VERSION=0.0.0"
 set "STATE_FILE=.headtracking-state.json"
@@ -22,7 +22,7 @@ set "ASI_LOADER_NAME=xinput1_3.dll"
 :: whatever the user tuned. Listing an .ini in MOD_DLLS instead puts it through
 :: the unconditional copy and resets every key on every update.
 set "MOD_SEED_FILES="
-set "MOD_CONTROLS=Controls:&echo   End       / Ctrl+Shift+Y - Toggle tracking&echo   Page Up   / Ctrl+Shift+G - Toggle position&echo   Page Down / Ctrl+Shift+H - Toggle yaw mode"
+set "MOD_CONTROLS=Controls:&echo   End       / Ctrl+Shift+Y - Toggle tracking&echo   Page Up   / Ctrl+Shift+G - Cycle tracking mode&echo   Page Down / Ctrl+Shift+H - Toggle yaw mode"
 :: Not used by this mod. Set blank so a value another mod's wrapper left in
 :: the same console does not reach the body.
 set "ASI_SUBDIR="

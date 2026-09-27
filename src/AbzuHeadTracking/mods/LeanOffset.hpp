@@ -28,12 +28,17 @@ constexpr float kMetersToUU = 100.0f;
 /// axes belongs here, downstream of that clamp. Doing it with
 /// PositionSettings::invert_z instead runs it upstream and hands a forward lean
 /// the 0.10m backward budget.
+///
+/// Sway is negated too: UE's +Y is right, and the tracker's x runs the other
+/// way for ABZU. Every build shipped [Position] InvertX=true to correct it, and
+/// the correction lives here now. The processor's x clamp is symmetric, so
+/// negating after it is the same as the processor's inversion before it.
 inline LeanOffsetUU LeanWorldOffset(float clean_yaw_deg, float pipeline_x,
                                     float pipeline_y, float pipeline_z) {
     const float yr = clean_yaw_deg * 0.01745329252f;  // deg -> rad
     const float cy = std::cos(yr), sy = std::sin(yr);
     const float fwd = -pipeline_z * kMetersToUU;
-    const float rgt = pipeline_x * kMetersToUU;
+    const float rgt = -pipeline_x * kMetersToUU;
 
     LeanOffsetUU o;
     o.x = cy * fwd - sy * rgt;

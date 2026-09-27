@@ -114,6 +114,7 @@ if (-not (Test-SemanticVersion $Version)) {
     Write-Host "Error: '$Version' is not a valid X.Y.Z version." -ForegroundColor Red
     exit 1
 }
+Assert-ReleaseNotBelowCanonicalSince -RepoRoot $projectDir -Version $Version
 
 $tagName = "v$Version"
 

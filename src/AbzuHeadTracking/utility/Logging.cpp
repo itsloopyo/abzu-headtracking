@@ -7,6 +7,7 @@
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace ueht::log {
 
@@ -14,6 +15,9 @@ namespace {
 std::mutex g_mutex;
 std::ofstream g_file;
 bool g_init = false;
+// Lines written before Init, which the config load writes before the log's own
+// settings are known. Init writes them to the file it opens, or drops them.
+std::vector<std::string> g_pending;
 
 std::string TimestampNow() {
     using namespace std::chrono;
@@ -40,7 +44,9 @@ void Write(const char* level, std::string_view msg) {
     line += "] ";
     line.append(msg.data(), msg.size());
     line += '\n';
-    if (g_file.is_open()) {
+    if (!g_init) {
+        g_pending.push_back(line);
+    } else if (g_file.is_open()) {
         g_file << line;
         g_file.flush();
     }
@@ -72,6 +78,11 @@ void Init(const std::string& path) {
                                 "; no log will be written\n").c_str());
         }
     }
+    if (g_file.is_open()) {
+        for (const std::string& line : g_pending) g_file << line;
+        g_file.flush();
+    }
+    g_pending.clear();
     g_init = true;
 }
 

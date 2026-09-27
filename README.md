@@ -47,7 +47,7 @@ $env:ABZU_PATH = "D:\Games\ABZU"
 If you would rather place the files by hand (for example, using the Nexus ZIP, which contains only the mod files):
 
 1. Install the [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases) by placing its `dinput8.dll` in `ABZU\AbzuGame\Binaries\Win64\` next to `AbzuGame-Win64-Shipping.exe`.
-2. Copy `AbzuHeadTracking.asi` and `HeadTracking.ini` into the same `Win64` folder.
+2. Copy `AbzuHeadTracking.asi` into the same `Win64` folder. The mod creates `CameraUnlock.ini` there when it first starts.
 
 ## Setting Up OpenTrack
 
@@ -112,113 +112,156 @@ view sits off to one side, centre it in the tracker.
 
 ## Controls
 
-Two equivalent binding sets - use whichever your keyboard has. Both fire the same action.
+Two equivalent binding sets by default - use whichever your keyboard has:
 
 | Action | Nav-cluster | Chord |
 |--------|-------------|-------|
 | Toggle tracking | `End` | `Ctrl+Shift+Y` |
-| Cycle DOF mode (6DOF / rotation-only / position-only) | `Page Up` | `Ctrl+Shift+G` |
+| Cycle tracking mode (6DOF / rotation-only / position-only) | `Page Up` | `Ctrl+Shift+G` |
 | Toggle yaw mode (horizon-locked / camera-local) | `Page Down` | `Ctrl+Shift+H` |
+
+Each action's keys are a list in the `[Hotkeys]` section of `CameraUnlock.ini`, chords included, so any of them can be changed or removed there (see [Configuration](#configuration)).
+
+The tracking mode and the yaw mode you pick are saved to `CameraUnlock.ini` and come back at the next start. **Toggle tracking** changes the current session only and is never saved. Whether head tracking is on when the game starts is `EnableOnStartup`.
 
 ## Configuration
 
-`HeadTracking.ini` is shipped next to `AbzuHeadTracking.asi` in `ABZU\AbzuGame\Binaries\Win64\` and read on startup. Edit it with any text editor. Section and key names are case-insensitive. The most useful settings:
+Close the game before editing `CameraUnlock.ini`, then launch it again to load your changes. Set sensitivity, axis mapping, and centering in your tracker.
+
+<!-- cameraunlock:config -->
+The mod reads its settings from `AbzuGame\Binaries\Win64\CameraUnlock.ini` in the game folder, and creates the file when it starts and finds none. Edit it with any text editor.
+
+A setting set to `default` takes its value from `Defaults.ini`, which every head tracking mod that keeps its settings in `CameraUnlock.ini` reads. Head tracking mods that keep their settings in another file do not read it. Writing a value in place of `default` changes that setting for this game only. When the mod saves a setting that a hotkey changed in game, it writes the new value in place of `default`, so that setting no longer follows `Defaults.ini` in this game until you set it to `default` again.
+
+`Defaults.ini` is `%AppData%\CameraUnlock\Defaults.ini` on Windows; `$XDG_CONFIG_HOME/CameraUnlock/Defaults.ini` on Linux, or `~/.config/CameraUnlock/Defaults.ini` where `XDG_CONFIG_HOME` is not set, under Wine and Proton too; and `~/Library/Application Support/CameraUnlock/Defaults.ini` on macOS. The mod's log, where it writes one, names the file it read.
+
+When the mod starts and finds no `Defaults.ini`, it creates one holding the built-in values, unless Windows runs the game as a packaged app. The mod never changes `Defaults.ini` after that. Edit it with any text editor.
+
+The built-in value of each setting set to `default` below:
+
+- `UdpPort=4242`
+- `EnableOnStartup=true`
+- `WorldSpaceYaw=true`
+- `RotationEnabled=true`
+- `LocalSmoothing=0.0`
+- `RemoteSmoothing=0.15`
+- `PositionEnabled=true`
+- `PositionLimitX=0.3`
+- `PositionLimitY=0.2`
+- `PositionLimitYDown=0.2`
+- `PositionLimitZ=0.4`
+- `PositionLimitZBack=0.1`
+- `ToggleKey=End, Ctrl+Shift+Y`
+- `CycleTrackingModeKey=PageUp, Ctrl+Shift+G`
+- `YawModeKey=PageDown, Ctrl+Shift+H`
+
+With every setting at its default, the file reads:
 
 ```ini
+; ABZU head tracking settings.
+; Comments start with ; and go on their own line. Text after a value is part of the value.
+; Hotkeys are key names such as End, PageUp or Ctrl+Shift+Y. Separate several with commas; leave empty for none.
+; A setting set to default takes its value from Defaults.ini, which every head tracking mod
+; that keeps its settings in CameraUnlock.ini reads: %AppData%\CameraUnlock\Defaults.ini on
+; Windows, $XDG_CONFIG_HOME/CameraUnlock/Defaults.ini (normally ~/.config/CameraUnlock) on
+; Linux, under Wine and Proton too, and ~/Library/Application Support/CameraUnlock/Defaults.ini
+; on macOS. The log names the file it read. Write a value instead of default to change that
+; setting for this game only.
+
+[CameraUnlock]
+; Written by the mod. Leave this section in place.
+ConfigFormat=1
+
 [Network]
-; UDP port the OpenTrack-compatible tracker sends to. Default 4242.
-UdpPort = 4242
+; UDP port the mod receives tracker data on (OpenTrack protocol).
+UdpPort=default
 
-[Tracking]
-; Per-axis sensitivity. 1.0 = 1:1 with tracker.
-YawSensitivity   = 1.0
-PitchSensitivity = 1.0
-RollSensitivity  = 1.0
+[General]
+; true: head tracking is on when the game starts. ToggleKey turns it on and off.
+EnableOnStartup=default
+; true: yaw turns around the world's up axis. false: around the camera's own up axis.
+WorldSpaceYaw=default
+; true: turning your head turns the view.
+; Tracking mode at startup, with PositionEnabled. The mode hotkey changes both.
+RotationEnabled=default
 
-; Per-axis inversion.
-InvertYaw   = false
-InvertPitch = false
-InvertRoll  = true
-
-; Deadzone in degrees, applied to all axes. 0 = off.
-Deadzone = 0.0
-
-; Smoothing is chosen per connection and covers rotation and position. A tracker
-; on this machine (loopback) uses LocalSmoothing; a phone or other device on the
-; network uses RemoteSmoothing. 0.0 = none .. 1.0 = heavy.
-LocalSmoothing  = 0.0
-RemoteSmoothing = 0.15
-
-[Hotkeys]
-; Win32 VK names (or a numeric VK like 0x22). Ctrl+Shift+Y/G/H chord
-; alternatives are baked in for keyboards without a nav cluster.
-ToggleKey   = End
-PositionKey = PageUp
-YawModeKey  = PageDown
-
-[Camera]
-; How head tracking reaches the view:
-;   updatecamera    : decoupled (default). Adds the head delta to the rendered
-;                     camera only, leaving the game's control rotation clean.
-;   controlrotation : couples head movement to the swim/control basis.
-Mode = updatecamera
-
-; Yaw axis. true (default) = horizon-locked (head-yaw rotates around the world
-; up-axis, so "up" stays constant); false = camera-local (leans at extreme
-; pitch). Toggle live with Page Down.
-WorldSpaceYaw = true
+[Smoothing]
+; Smoothing when the tracker runs on this PC. 0 is the least, 1 the most.
+LocalSmoothing=default
+; Smoothing when the tracker is another device on the network, such as a phone.
+; 0 is the least, 1 the most.
+RemoteSmoothing=default
 
 [Position]
-; 6DOF positional tracking, decoupled exactly like rotation. Enabled = startup
-; state (true = start in 6DOF). Page Up cycles 6DOF -> rotation-only ->
-; position-only.
-Enabled      = true
-SensitivityX = 1.0
-SensitivityY = 1.0
-SensitivityZ = 1.0
-InvertX      = true
-InvertY      = false
-; Corrects a tracker whose depth axis runs backwards. Not a lean-direction
-; switch: it is applied before the LimitZ / LimitZBack clamp, so turning it on
-; also swaps which direction gets which budget.
-InvertTrackerZ = false
-; Travel limits in meters. Z is asymmetric (more forward than back).
-LimitX     = 0.30
-LimitY     = 0.20
-LimitZ     = 0.40
-LimitZBack = 0.10
+; true: moving your head moves the view.
+; Tracking mode at startup, with RotationEnabled. The mode hotkey changes both.
+PositionEnabled=default
+; How far, in metres, leaning left or right can move the view.
+PositionLimitX=default
+; How far, in metres, raising your head can move the view.
+PositionLimitY=default
+; How far, in metres, lowering your head can move the view.
+PositionLimitYDown=default
+; How far, in metres, leaning forward can move the view.
+PositionLimitZ=default
+; How far, in metres, leaning back can move the view.
+PositionLimitZBack=default
+; Where in the PlayerCameraManager the rendered camera position sits. 0x0 = no lean.
+; LocationOffset=0x3F8
+
+[Hotkeys]
+; Turns head tracking on and off.
+ToggleKey=default
+; Changes the tracking mode: rotation and position, rotation only, position only.
+CycleTrackingModeKey=default
+; Switches yaw between the world's up axis and the camera's own (WorldSpaceYaw).
+YawModeKey=default
+
+[Camera]
+; The PlayerCameraManager vtable slot of UpdateCamera, which the mod hooks to move the
+; rendered view. Outside 0 to 255 the hook is not installed and the mod does nothing.
+; UpdateCameraSlot=196
+; Where in the PlayerCameraManager the rendered camera rotation sits. 0x0 = off.
+; PovOffset=0x404
+; A second camera rotation to move with the first. 0x0 = off.
+; CacheOffset=0x0
+; Diagnostics: true logs the PlayerCameraManager vtable once. Leave off for play.
+DumpVtable=false
+; Diagnostics: true logs which camera offsets change as you look around. Leave off for play.
+WatchPov=false
 
 [Logging]
-LogToFile = true
-LogPath   = HeadTracking.log
+; true: write a log file for bug reports.
+LogToFile=true
+; The log file. A bare file name is next to the game's executable.
+LogPath=HeadTracking.log
 ```
+<!-- /cameraunlock:config -->
 
-The `[Camera]` and `[Position]` sections also carry preset engine offsets (`UpdateCameraSlot`, `PovOffset`, `LocationOffset`) confirmed for the shipping ABZU build. Leave them as shipped unless a game patch moves them.
+The `[Camera]` and `[Position]` sections also carry engine offsets (`UpdateCameraSlot`, `PovOffset`, `CacheOffset`, `LocationOffset`) confirmed for the shipping ABZU build. They are written as comments at those values. Leave them alone unless a game patch moves them.
 
 ## Troubleshooting
 
 **Mod not loading**
-- Confirm `dinput8.dll`, `AbzuHeadTracking.asi`, and `HeadTracking.ini` are all in `AbzuGame\Binaries\Win64\`.
+- Confirm the ASI loader and `AbzuHeadTracking.asi` are both in `AbzuGame\Binaries\Win64\`, and that the mod created `CameraUnlock.ini` there.
 - Check `HeadTracking.log` in that folder for startup errors. It is rewritten on every launch and the previous run is kept as `HeadTracking.prev.log`, so send both when reporting a problem.
 
 **No tracking response**
 - Verify OpenTrack output is set to UDP, address `127.0.0.1`, port `4242`, and that tracking is started.
-- Make sure `UdpPort` in `HeadTracking.ini` matches OpenTrack's port.
+- Make sure `UdpPort` in `CameraUnlock.ini` matches OpenTrack's port.
 - Confirm tracking is toggled on (`End` or `Ctrl+Shift+Y`).
 
 **Jittery or unstable tracking**
-- Raise `LocalSmoothing` (tracker on this PC) or `RemoteSmoothing` (phone or other network device) toward `1.0` in `HeadTracking.ini`.
+- Raise `LocalSmoothing` (tracker on this PC) or `RemoteSmoothing` (phone or other network device) toward `1.0` in `CameraUnlock.ini`.
 - For wireless or phone trackers, increase smoothing in OpenTrack as well.
 
 **Wrong rotation axis or inverted axis**
-- Lower the offending axis sensitivity, or raise `Deadzone` above `0.0` to ignore small movements.
-- Flip `InvertYaw` / `InvertPitch` / `InvertRoll` if an axis moves the wrong way.
+- Sensitivity, deadzone and axis inversion are set in your tracker app, not in the mod.
 - If the view sits off-straight, centre it in your tracker app (OpenTrack's Center bind, or the CENTER button in your phone app) while looking straight ahead. The mod applies whatever the tracker sends, so the tracker owns the centre.
 
 **View drifts or leans with head position**
-- Tune the `[Position]` sensitivities and limits, or flip `InvertX` / `InvertY` if sway or heave moves the wrong way.
-- `InvertTrackerZ` is for a tracker that sends depth backwards, not for a lean that feels reversed. It is applied before the `LimitZ` / `LimitZBack` clamp, so switching it on also swaps the travel budgets to 0.10m forward and 0.40m back.
-- To disable positional tracking, cycle DOF mode with `Page Up` (or `Ctrl+Shift+G`) to rotation-only, or set `[Position] Enabled = false`.
+- Tune the position limits (`PositionLimitX` and the rest) in `CameraUnlock.ini`. A sway, heave or depth axis that moves the wrong way is set in your tracker app.
+- To disable positional tracking, cycle the tracking mode with `Page Up` (or `Ctrl+Shift+G`) to rotation-only, or set `PositionEnabled=false`.
 
 **Yaw feels wrong when looking up or down at extreme angles**
 - Try toggling between world-locked and camera-local yaw with `Page Down` (or `Ctrl+Shift+H`). World-locked (default) is horizon-stable - yaw always turns around vertical; camera-local follows the camera's current up-axis and leans/rolls the view at steep pitch.

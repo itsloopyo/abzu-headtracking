@@ -9,3 +9,5 @@
 # The differential test hashes these files and reads their bytes as they are.
 tests/config_differential/data/** -text
 tests/config_differential/oracle/** -text
+# The committed CameraUnlock.ini render, CRLF byte for byte as the mod writes it.
+HeadTracking.ini -text

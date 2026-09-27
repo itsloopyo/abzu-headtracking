@@ -9,10 +9,8 @@
 // direction still looked right, so nothing in the render path noticed - the
 // camera just refused to lean in.
 //
-// The whole shipped chain runs here: the real HeadTracking.ini, the real
-// Config -> PositionSettings mapping, the real PositionProcessor, and the real
-// engine-boundary mapping. A default in Config.hpp that disagrees with the
-// shipped INI fails this test, because the INI is what users actually get.
+// The whole chain runs here: the defaults CameraUnlock.ini is created with,
+// the real PositionProcessor, and the real engine-boundary mapping.
 
 #include <cmath>
 #include <cstdio>
@@ -24,10 +22,6 @@
 #include "cameraunlock/data/position_data.h"
 #include "cameraunlock/math/quat4.h"
 #include "cameraunlock/processing/position_processor.h"
-
-#ifndef ABZUHT_SHIPPED_INI
-#error "ABZUHT_SHIPPED_INI must name the shipped HeadTracking.ini"
-#endif
 
 namespace {
 
@@ -45,30 +39,14 @@ void CheckNear(float actual, float expected, const char* what) {
     ++g_failures;
 }
 
-/// The config a user actually runs with, not the struct defaults.
-ueht::Config ShippedConfig() {
-    ueht::Config cfg;
-    const std::string path = ABZUHT_SHIPPED_INI;
-    if (!ueht::Config::LoadFromFile(path, cfg)) {
-        std::printf("FAIL: could not parse %s\n", path.c_str());
-        ++g_failures;
-    }
-    // LoadFromFile treats a missing file as "defaults are fine", which would
-    // quietly test something other than what ships.
-    if (std::FILE* f = std::fopen(path.c_str(), "r")) {
-        std::fclose(f);
-    } else {
-        std::printf("FAIL: shipped INI not found at %s\n", path.c_str());
-        ++g_failures;
-    }
-    return cfg;
-}
+/// The settings a fresh CameraUnlock.ini runs on.
+ueht::Config FreshConfig() { return ueht::config::MakeTable().defaults(); }
 
 /// Forward (+X) component of the camera-location delta, in UE world units, for
 /// a sustained head offset of `raw_z` meters on the tracker's depth axis.
 float ForwardUU(const ueht::Config& cfg, float raw_z) {
     cameraunlock::PositionProcessor processor;
-    processor.SetSettings(cfg.AsPositionSettings());
+    processor.SetSettings(cfg.position);
     const cameraunlock::PositionData raw(0.0f, 0.0f, raw_z);
     // Two ticks so the exponential smoothing has settled on the clamped value.
     cameraunlock::math::Vec3 out =
@@ -97,17 +75,45 @@ void LeanBudgetsAreNotSwapped(const ueht::Config& cfg) {
 /// and sway stays perpendicular to the facing direction.
 void LateralAndVerticalAxesHold() {
     const ueht::LeanOffsetUU ahead = ueht::LeanWorldOffset(0.0f, 0.1f, 0.2f, 0.0f);
-    CheckNear(ahead.y, 0.1f * ueht::kMetersToUU, "sway maps to UE right (+Y) at yaw 0");
+    CheckNear(ahead.y, -0.1f * ueht::kMetersToUU, "tracker +x sway maps to UE left (-Y) at yaw 0");
     CheckNear(ahead.z, 0.2f * ueht::kMetersToUU, "heave maps to UE up (+Z)");
 
     const ueht::LeanOffsetUU turned = ueht::LeanWorldOffset(90.0f, 0.0f, 0.0f, -0.1f);
     CheckNear(turned.y, 0.1f * ueht::kMetersToUU, "forward lean follows a 90 degree yaw onto +Y");
 }
 
+/// Every build before CameraUnlock.ini shipped [Position] InvertX=true, which
+/// PositionProcessor applied before its clamp, and mapped x to UE +Y as it
+/// came. LeanWorldOffset now negates sway itself and the processor inverts
+/// nothing, and the camera has to land in the same place.
+void SwayMatchesTheShippedInversion(const ueht::Config& cfg) {
+    for (const float raw_x : {-1.0f, -0.2f, -0.05f, 0.0f, 0.05f, 0.2f, 1.0f}) {
+        cameraunlock::PositionSettings old_settings = cfg.position;
+        old_settings.invert_x = true;
+        cameraunlock::PositionProcessor old_processor;
+        old_processor.SetSettings(old_settings);
+        cameraunlock::PositionProcessor processor;
+        processor.SetSettings(cfg.position);
+        const cameraunlock::PositionData raw(raw_x, 0.0f, 0.0f);
+        cameraunlock::math::Vec3 old_out, out;
+        for (int i = 0; i < 3; ++i) {
+            old_out = old_processor.Process(raw, cameraunlock::math::Quat4::Identity(), 0.016f);
+            out = processor.Process(raw, cameraunlock::math::Quat4::Identity(), 0.016f);
+        }
+        const float old_right = old_out.x * ueht::kMetersToUU;
+        const float right = ueht::LeanWorldOffset(0.0f, out.x, out.y, out.z).y;
+        Check(old_right == right, "sway lands where the shipped InvertX=true put it");
+    }
+}
+
 }  // namespace
 
 int main() {
-    const ueht::Config cfg = ShippedConfig();
+    const ueht::Config cfg = FreshConfig();
+    Check(!cfg.position.invert_x && !cfg.position.invert_y && !cfg.position.invert_z,
+          "the processor inverts no axis");
+
+    SwayMatchesTheShippedInversion(cfg);
 
     LeanDirectionIsNotReversed(cfg);
     LeanBudgetsAreNotSwapped(cfg);
