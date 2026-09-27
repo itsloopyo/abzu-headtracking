@@ -10,6 +10,7 @@ set(ABZU_DLL_SOURCES
     mods/UnrealCamera.cpp
     utility/Logging.cpp
     utility/Scan.cpp
+    ${CMAKE_SOURCE_DIR}/src/legacy_config/legacy_config.cpp
 )
 
 add_library(AbzuHeadTracking SHARED ${ABZU_DLL_SOURCES})
@@ -23,6 +24,7 @@ set_target_properties(AbzuHeadTracking PROPERTIES
 target_include_directories(AbzuHeadTracking
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/include
 )
 

@@ -60,9 +60,11 @@ if(ABZU_BUILD_TESTS)
         tests/lean_budget_tests.cpp
         src/AbzuHeadTracking/Config.cpp
         src/AbzuHeadTracking/utility/Logging.cpp
+        src/legacy_config/legacy_config.cpp
     )
     target_include_directories(abzuht_lean_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/AbzuHeadTracking
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
     target_compile_definitions(abzuht_lean_tests PRIVATE
@@ -73,4 +75,46 @@ if(ABZU_BUILD_TESTS)
         target_compile_options(abzuht_lean_tests PRIVATE /W4 /permissive- /EHsc)
     endif()
     add_test(NAME lean_budget COMMAND abzuht_lean_tests)
+
+    # The config differential test. The oracle is the newest published build's reader, with
+    # ParseVk and ParseMode and the core sources they compiled, copied verbatim into
+    # tests/config_differential/oracle (provenance.txt). It builds as a library with `ueht` and
+    # `cameraunlock` renamed, so it links beside the current core and the current mod.
+    set(ABZU_ORACLE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential/oracle)
+    add_library(abzuht_config_oracle STATIC
+        ${ABZU_ORACLE_DIR}/src/Config.cpp
+        ${ABZU_ORACLE_DIR}/src/utility/Logging.cpp
+        ${ABZU_ORACLE_DIR}/core/src/config/ini_reader.cpp
+        tests/config_differential/oracle_adapter.cpp
+    )
+    target_include_directories(abzuht_config_oracle PRIVATE
+        ${ABZU_ORACLE_DIR}/src
+        ${ABZU_ORACLE_DIR}/include
+        ${ABZU_ORACLE_DIR}/core/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential)
+    target_compile_definitions(abzuht_config_oracle PRIVATE
+        cameraunlock=abzuht_oracle_core
+        ueht=abzuht_oracle)
+    if(MSVC)
+        target_compile_options(abzuht_config_oracle PRIVATE /EHsc)
+    endif()
+
+    add_executable(abzuht_config_differential_tests
+        tests/config_differential/differential_tests.cpp
+        src/AbzuHeadTracking/utility/Logging.cpp
+        src/legacy_config/legacy_config.cpp
+    )
+    target_include_directories(abzuht_config_differential_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/AbzuHeadTracking
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential
+    )
+    target_compile_definitions(abzuht_config_differential_tests PRIVATE
+        ABZU_DIFFERENTIAL_DATA="${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential/data")
+    target_link_libraries(abzuht_config_differential_tests PRIVATE cameraunlock abzuht_config_oracle)
+    if(MSVC)
+        target_compile_options(abzuht_config_differential_tests PRIVATE /W4 /permissive- /EHsc)
+    endif()
+    add_test(NAME config_differential COMMAND abzuht_config_differential_tests)
 endif()

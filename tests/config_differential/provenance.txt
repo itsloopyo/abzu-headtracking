@@ -1,0 +1,36 @@
+# What the config differential test compiles, and where each file came from.
+# scripts/check-differential-provenance.ps1, which pixi run test runs first, fails when a
+# listed file no longer has its hash.
+#
+# Newest published build: the rolling 'dev' pre-release, tag dev at 10eb679, pinned to
+# cameraunlock-core 3465659. No v* release was published. Its installer ZIP
+# (plugins/HeadTracking.ini) and its launcher seed carried the same bytes as
+# 'git show 10eb679:HeadTracking.ini' (data/dev-shipped.ini). It wrote no file on a first run:
+# a missing HeadTracking.ini ran on the defaults. 4ced432 committed the one earlier version of
+# the file (data/4ced432-shipped.ini).
+#
+# Oracle: copies of 'git show 10eb679:<path>', slices of two of them, and cameraunlock-core
+# 'git show 3465659:cpp/<path>'.
+cbf1509e53ee6486b0ec66c8ff0a50a3ee665fdba7b22669d84090a4fa5f0953  tests/config_differential/oracle/src/Config.cpp  10eb679:src/AbzuHeadTracking/Config.cpp
+de9e3513e37710b6827875f7c0ff73adc9a2f9a915d30ee56cbd82747b67de9f  tests/config_differential/oracle/include/ueht/Config.hpp  10eb679:include/ueht/Config.hpp
+ef549f196637741667b1526cb9dea76a0e94da3a38f329b1d269c45c26db2255  tests/config_differential/oracle/src/utility/Logging.hpp  10eb679:src/AbzuHeadTracking/utility/Logging.hpp
+75b2742f2564ff14f00fe3d9a95213c2891a216ba3bbd1e0e565b3b6ac3748c1  tests/config_differential/oracle/src/utility/Logging.cpp  10eb679:src/AbzuHeadTracking/utility/Logging.cpp
+8da2d1cb9276edf710b1dc3b531097e524cba0c072e784db8dfc7f2de781696b  tests/config_differential/oracle/src/parse_vk.inc  10eb679:src/AbzuHeadTracking/mods/HeadTracking.cpp lines 26-59
+27102deb6d2f7b70c2952f15f7aa50e98c114255654549411996d7c99d52f205  tests/config_differential/oracle/src/parse_mode.inc  10eb679:src/AbzuHeadTracking/mods/UnrealCamera.cpp lines 176-179
+a7ffb44210ff59672fa97e8e5feaa2cb3e81938fcc0334a384c68bc371b3857a  tests/config_differential/oracle/core/include/cameraunlock/config/ini_reader.h  core 3465659:cpp/include/cameraunlock/config/ini_reader.h
+e01515c2656aaf533bae4350dc45b702c3e3d4043935743dcc9bd5ea581fbe1c  tests/config_differential/oracle/core/src/config/ini_reader.cpp  core 3465659:cpp/src/config/ini_reader.cpp
+7cdb1ad02461e4cf37d3f2e2f9eedde12a9ed3238a61f8906302596589d2f629  tests/config_differential/oracle/core/include/cameraunlock/data/tracking_pose.h  core 3465659:cpp/include/cameraunlock/data/tracking_pose.h
+ccd022e0f63bfe6cde243f2769b803bfa7d0ead6f77118874fa6c57961021a89  tests/config_differential/oracle/core/include/cameraunlock/data/position_settings.h  core 3465659:cpp/include/cameraunlock/data/position_settings.h
+fc2146f8c585e5f610c7234e302f59de4945679cfa28ff479ca47477ec073f22  tests/config_differential/oracle/core/include/cameraunlock/math/smoothing_utils.h  core 3465659:cpp/include/cameraunlock/math/smoothing_utils.h
+d7a905270933e3cb0c4c361d29d3fd701655498cbcd1875ea79d180468bdbe6a  tests/config_differential/oracle/core/include/cameraunlock/math/angle_utils.h  core 3465659:cpp/include/cameraunlock/math/angle_utils.h
+c59c2d7cd9f81ae7d41fec283be02888285d104927cb0f0ba94ad13d51248120  tests/config_differential/oracle/core/include/cameraunlock/input/hotkey_poller.h  core 3465659:cpp/include/cameraunlock/input/hotkey_poller.h
+#
+# Import: the frozen reader, and the frozen core sources it compiles at the current pin.
+65fd18653efe7828d333241693c99173fa8f0a60f327b037b136d267544cfad9  src/legacy_config/legacy_config.h  frozen reader
+0f60f7ea642e3c321a45184872dc29ffaa52c94e190eb7ef7cdd14b156bd19cd  src/legacy_config/legacy_config.cpp  frozen reader
+a7ffb44210ff59672fa97e8e5feaa2cb3e81938fcc0334a384c68bc371b3857a  cameraunlock-core/cpp/include/cameraunlock/config/ini_reader.h  core, frozen
+e01515c2656aaf533bae4350dc45b702c3e3d4043935743dcc9bd5ea581fbe1c  cameraunlock-core/cpp/src/config/ini_reader.cpp  core, frozen
+#
+# Inputs.
+5d1a2a1b112419df01ede76d4b8bbb34ecff10864b72d6b917166c319189f1f9  tests/config_differential/data/dev-shipped.ini  10eb679:HeadTracking.ini
+cb59f59243b4549f82dd029c6adfea3ef27dd7129bb7d24aae22bbde4693a0ac  tests/config_differential/data/4ced432-shipped.ini  4ced432:HeadTracking.ini

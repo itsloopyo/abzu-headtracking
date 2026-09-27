@@ -21,8 +21,11 @@ build-debug = { cmd = "cmake --build build --config Debug", depends-on = ["setup
 clean = { cmd = "powershell -Command \"if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }\"" }
 clean-all = { cmd = "powershell -Command \"if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; if (Test-Path 'release') { Remove-Item 'release' -Recurse -Force }\"" }
 update-deps = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/update-deps.ps1" }
-package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build"] }
+package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build", "test"] }
 install = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 Release", depends-on = ["build"] }
-test = { cmd = "ctest --test-dir build -C Release --output-on-failure", depends-on = ["build"] }
+# The behaviour tests and the config differential test against the published build. The
+# provenance check first: the differential test proves nothing once a file it compiles has
+# drifted from the build it names.
+test = { cmd = "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-differential-provenance.ps1 && ctest --test-dir build -C Release --output-on-failure", depends-on = ["build"] }
 uninstall = { cmd = "cmd /c scripts\\uninstall.cmd /y" }
 release = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/release.ps1" }

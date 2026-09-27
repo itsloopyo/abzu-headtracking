@@ -6,3 +6,6 @@
 *.gif binary
 *.zip binary
 *.dll binary
+# The differential test hashes these files and reads their bytes as they are.
+tests/config_differential/data/** -text
+tests/config_differential/oracle/** -text
