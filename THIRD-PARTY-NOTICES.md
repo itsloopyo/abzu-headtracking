@@ -15,7 +15,7 @@ ABZU.
 | injector | `f7fd18f` (inside Ultimate ASI Loader v9.7.2) | zlib | Compiled into the vendored dinput8.dll |
 | miniz | 3.0.0 (inside Ultimate ASI Loader v9.7.2) | MIT | Compiled into the vendored dinput8.dll |
 | MinHook | v1.3.4-13-g05c06c5 | BSD-2-Clause | Compiled into `AbzuHeadTracking.asi` |
-| cameraunlock-core | f441e29427b7422a584ba492dddd7788881804b0 | MIT | Compiled into `AbzuHeadTracking.asi` |
+| cameraunlock-core | ba57f8488cf98be2148f4f6640125c5d1e5fb3ca | MIT | Compiled into `AbzuHeadTracking.asi` |
 | OpenTrack | n/a | ISC | Not bundled; UDP protocol interoperability only |
 
 ---
@@ -252,7 +252,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 Git submodule at `cameraunlock-core/`, compiled into `AbzuHeadTracking.asi`. Our own code,
 MIT licensed, reproduced here so the notices are complete.
 
-- Pinned commit: `f441e29427b7422a584ba492dddd7788881804b0`
+- Pinned commit: `ba57f8488cf98be2148f4f6640125c5d1e5fb3ca`
 
 ```
 MIT License
