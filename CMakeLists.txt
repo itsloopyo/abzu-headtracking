@@ -141,5 +141,5 @@ if(ABZU_BUILD_TESTS)
     add_test(NAME config_differential COMMAND abzuht_config_differential_tests)
     # Every corpus input is migrated three times through real files, which takes longer than
     # ctest's default 1500 seconds on a slow disk.
-    set_tests_properties(config_differential PROPERTIES TIMEOUT 7200)
+    set_tests_properties(config_differential PROPERTIES TIMEOUT 7200 LABELS differential)
 endif()
