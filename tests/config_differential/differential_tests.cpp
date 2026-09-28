@@ -20,12 +20,14 @@
 // only differences allowed are core's approved ones, each asserted as a recorded drop: a
 // sensitivity, deadzone or inversion away from what the build shipped (pose_shaping), a [Camera]
 // Mode that ran the coupled ControlRotation path (coupled_aim), a non-finite position limit
-// (N2), and a hotkey name that bound 0xFF (N1) or a Ctrl, Shift or Alt key (N3). The shipped
+// (N2), a position limit outside 0 to 10 or a UdpPort of 0, which import as the nearest end of
+// the row's range (N4), and a hotkey name that bound 0xFF (N1) or a Ctrl, Shift or Alt key (N3). The shipped
 // InvertRoll=true and [Position] InvertX=true are folded into the axis code
 // (tests/lean_budget_tests.cpp holds the sway fold to the processor's inversion).
 //
 // A setting the player never changed from what the published build shipped follows Defaults.ini
-// (owner rule of 2026-09-26): the import lists exactly those rows in follows_defaults_ini, and a
+// (owner rule of 2026-09-26), and so does a position limit that is not finite (N2, owner ruling of
+// 2026-09-27): the import lists exactly those rows in follows_defaults_ini, and a
 // third migration of every input, over a Defaults.ini that differs from the built-in value on
 // every global row the table binds, writes each of them `default` and runs on Defaults.ini's
 // value, while every row the player changed runs on the value the first migration carried.
@@ -34,11 +36,6 @@
 // build registered beside it. Which held modifiers let a binding fire is core's rule now
 // (RegisterKeyBindings): a bare key does not fire while Ctrl and Shift are both held, where the
 // published build's poller fired it anyway.
-//
-// A file holding a value the published build ran on that no canonical row can hold is not
-// converted: UdpPort 0, which that build read from any UdpPort that is not a number, and a
-// negative or oversized position limit. The owner defers, as core's docs/canonical-config.md
-// says, and the test asserts that it does, writes nothing and runs the session on the import.
 //
 // Also asserted after every load: HeadTracking.ini keeps its bytes, last write time and
 // attributes, the folder holds it and CameraUnlock.ini and nothing else, a read-only copy
@@ -87,6 +84,9 @@ constexpr const char* kConfigName = "CameraUnlock.ini";
 
 int g_failures = 0;
 int g_checks = 0;
+// Imported inputs with a number N4 clamped, and with one N2 left to Defaults.ini.
+int g_clamped = 0;
+int g_non_finite = 0;
 
 void Check(bool cond, const std::string& what) {
     ++g_checks;
@@ -466,12 +466,23 @@ bool SameBindings(const std::string& list, const std::vector<KeyBinding>& expect
 
 float FiniteOr(float value, float fallback) { return std::isfinite(value) ? value : fallback; }
 
+// The canonical position limits take 0 to 10.
+constexpr float kMinLimit = 0.0f;
+constexpr float kMaxLimit = 10.0f;
+
+bool OutsideLimitRange(float value) { return std::isfinite(value) && (value < kMinLimit || value > kMaxLimit); }
+
+// A limit as the migration carries it: N2, then N4.
+float ImportedLimit(float value, float fallback) {
+    return std::clamp(FiniteOr(value, fallback), kMinLimit, kMaxLimit);
+}
+
 // Every setting the migration carries, against the import's, and the startup state.
 std::vector<std::string> MigrationDifferences(const legacy::Config& l, const Config& m) {
     const Config d;
     std::vector<std::string> out;
     auto x = [&out](const char* n, bool same) { if (!same) out.push_back(n); };
-    x("UdpPort", m.udp_port == l.udp_port);
+    x("UdpPort", m.udp_port == (l.udp_port == 0 ? 1 : l.udp_port));
     x("LocalSmoothing", SameBits(m.local_smoothing, l.local_smoothing) &&
                             SameBits(m.position.local_smoothing, l.local_smoothing));
     x("RemoteSmoothing", SameBits(m.remote_smoothing, l.remote_smoothing) &&
@@ -482,12 +493,12 @@ std::vector<std::string> MigrationDifferences(const legacy::Config& l, const Con
                                                              : cameraunlock::TrackingMode::RotationOnly));
     // The published build always started with tracking on.
     x("EnableOnStartup", m.enable_on_startup);
-    x("PositionLimitX", SameBits(m.position.limit_x, FiniteOr(l.pos_limit_x, d.position.limit_x)));
-    x("PositionLimitY", SameBits(m.position.limit_y, FiniteOr(l.pos_limit_y, d.position.limit_y)));
-    x("PositionLimitYDown", SameBits(m.position.limit_y_down, FiniteOr(l.pos_limit_y, d.position.limit_y)));
-    x("PositionLimitZ", SameBits(m.position.limit_z, FiniteOr(l.pos_limit_z, d.position.limit_z)));
+    x("PositionLimitX", SameBits(m.position.limit_x, ImportedLimit(l.pos_limit_x, d.position.limit_x)));
+    x("PositionLimitY", SameBits(m.position.limit_y, ImportedLimit(l.pos_limit_y, d.position.limit_y)));
+    x("PositionLimitYDown", SameBits(m.position.limit_y_down, ImportedLimit(l.pos_limit_y, d.position.limit_y)));
+    x("PositionLimitZ", SameBits(m.position.limit_z, ImportedLimit(l.pos_limit_z, d.position.limit_z)));
     x("PositionLimitZBack",
-      SameBits(m.position.limit_z_back, FiniteOr(l.pos_limit_z_back, d.position.limit_z_back)));
+      SameBits(m.position.limit_z_back, ImportedLimit(l.pos_limit_z_back, d.position.limit_z_back)));
     x("processor shaping", m.position.sensitivity_x == 1.0f && m.position.sensitivity_y == 1.0f &&
                                m.position.sensitivity_z == 1.0f && !m.position.invert_x && !m.position.invert_y &&
                                !m.position.invert_z);
@@ -667,7 +678,8 @@ const std::vector<FollowingRow>& FollowingRows() {
 }
 
 // The rows the player never changed, worked out here from what the published build shipped:
-// every setting HeadTracking.ini held at its shipped value, and every one it did not hold.
+// every setting HeadTracking.ini held at its shipped value, every one it did not hold, and every
+// position limit it held that is not finite.
 std::set<Concept> Untouched(const legacy::Config& l) {
     const legacy::Config shipped = Shipped();
     std::set<Concept> u = {Concept::EnableOnStartup};
@@ -679,13 +691,14 @@ std::set<Concept> Untouched(const legacy::Config& l) {
     }
     if (SameBits(l.local_smoothing, shipped.local_smoothing)) u.insert(Concept::LocalSmoothing);
     if (SameBits(l.remote_smoothing, shipped.remote_smoothing)) u.insert(Concept::RemoteSmoothing);
-    if (l.pos_limit_x == shipped.pos_limit_x) u.insert(Concept::PositionLimitX);
-    if (l.pos_limit_y == shipped.pos_limit_y) {
+    const auto same = [](float value, float ship) { return !std::isfinite(value) || value == ship; };
+    if (same(l.pos_limit_x, shipped.pos_limit_x)) u.insert(Concept::PositionLimitX);
+    if (same(l.pos_limit_y, shipped.pos_limit_y)) {
         u.insert(Concept::PositionLimitY);
         u.insert(Concept::PositionLimitYDown);
     }
-    if (l.pos_limit_z == shipped.pos_limit_z) u.insert(Concept::PositionLimitZ);
-    if (l.pos_limit_z_back == shipped.pos_limit_z_back) u.insert(Concept::PositionLimitZBack);
+    if (same(l.pos_limit_z, shipped.pos_limit_z)) u.insert(Concept::PositionLimitZ);
+    if (same(l.pos_limit_z_back, shipped.pos_limit_z_back)) u.insert(Concept::PositionLimitZBack);
     if (legacy::ParseVk(l.toggle_key) == legacy::ParseVk(shipped.toggle_key)) u.insert(Concept::ToggleKey);
     if (legacy::ParseVk(l.position_key) == legacy::ParseVk(shipped.position_key)) {
         u.insert(Concept::CycleTrackingModeKey);
@@ -728,7 +741,9 @@ std::set<DropKey> ExpectedDrops(const legacy::Config& l) {
     if (!legacy::IsUpdateCameraMode(l.camera_mode)) d.insert({DropRule::CoupledAim, "Camera", "Mode"});
     auto finite = [&d](float v, const char* key) {
         if (!std::isfinite(v)) d.insert({DropRule::NonFiniteNumber, "Position", key});
+        if (OutsideLimitRange(v)) d.insert({DropRule::NumberOutOfRange, "Position", key});
     };
+    if (l.udp_port == 0) d.insert({DropRule::NumberOutOfRange, "Network", "UdpPort"});
     finite(l.pos_limit_x, "LimitX");
     finite(l.pos_limit_y, "LimitY");
     finite(l.pos_limit_z, "LimitZ");
@@ -759,39 +774,7 @@ void WriteSkewedDefaults(const Scratch& scratch) {
     WriteBytes(scratch.SkewedPath(), edited.bytes);
 }
 
-// A value the published build ran on that no canonical row can hold: UdpPort 0, which that build
-// read from any UdpPort that is not a number, and a finite position limit outside 0 to 10.
-bool OutsideARange(const legacy::Config& l) {
-    auto outside = [](float v) { return std::isfinite(v) && (v < 0.0f || v > 10.0f); };
-    return l.udp_port == 0 || outside(l.pos_limit_x) || outside(l.pos_limit_y) || outside(l.pos_limit_z) ||
-           outside(l.pos_limit_z_back);
-}
-
-// Such a file is not converted: the owner defers, runs the session on what the import gave,
-// writes nothing, and tries again at the next launch.
-void CheckDeferred(Scratch& scratch, const Input& input, const legacy::Config& l) {
-    for (const bool readOnly : {false, true}) {
-        const fs::path dir = scratch.Fresh(readOnly ? "deferred-ro" : "deferred");
-        const fs::path file = Place(dir, input);
-        if (readOnly) SetReadOnly(file);
-        const std::vector<Entry> before = List(dir);
-        const std::string defaultsBefore = ReadBytes(scratch.DefaultsPath());
-        const cameraunlock::config::ConfigLoadResult<Config> loaded = LoadOwner(scratch.DefaultsPath(), dir);
-        Check(loaded.status == ConfigLoadStatus::Deferred,
-              input.name + ": a value outside a range is not deferred but " +
-                  cameraunlock::config::ConfigLoadStatusName(loaded.status));
-        Check(List(dir) == before, input.name + ": a deferred import changed its folder");
-        Check(ReadBytes(scratch.DefaultsPath()) == defaultsBefore, input.name + ": Defaults.ini changed");
-        const std::vector<std::string> d = MigrationDifferences(l, loaded.config);
-        Check(d.empty(), input.name + ": the deferred session differs from the import: " + Join(d));
-    }
-}
-
 void Comparison2(Scratch& scratch, const Input& input, const ImportRun& import, const Config& skewed) {
-    if (input.bytes && OutsideARange(import.config)) {
-        CheckDeferred(scratch, input, import.config);
-        return;
-    }
     const std::optional<Migrated> migrated = Migrate(scratch, input, false, scratch.DefaultsPath());
     const std::optional<Migrated> readOnly = Migrate(scratch, input, true, scratch.DefaultsPath());
     if (!migrated || !readOnly) return;
@@ -819,6 +802,10 @@ void Comparison2(Scratch& scratch, const Input& input, const ImportRun& import, 
             got.push_back(cameraunlock::config::DescribeDroppedValue(drop));
         }
         Check(false, input.name + ": the drops are not the approved ones: " + Join(got));
+    }
+    for (const DropKey& drop : drops) {
+        if (std::get<0>(drop) == DropRule::NumberOutOfRange) ++g_clamped;
+        if (std::get<0>(drop) == DropRule::NonFiniteNumber) ++g_non_finite;
     }
 
     const std::set<Concept> follows(imported.follows_defaults_ini.begin(), imported.follows_defaults_ini.end());
@@ -849,6 +836,13 @@ std::vector<Input> Inputs(const std::string& shipped, const std::string& earlier
     inputs.push_back({"empty file", std::string()});
     inputs.push_back({"dev shipped HeadTracking.ini", shipped});
     inputs.push_back({"4ced432 HeadTracking.ini", earlier});
+    // N4, 10 and 0 themselves, which are not clamped, and N2.
+    for (const char* file : {"[Network]\r\nUdpPort=abc\r\n", "[Position]\r\nLimitX=25\r\n",
+                             "[Position]\r\nLimitY=-0.5\r\n", "[Position]\r\nLimitZ=10\r\n",
+                             "[Position]\r\nLimitZBack=0\r\n", "[Position]\r\nLimitZBack=1e30\r\n",
+                             "[Position]\r\nLimitX=nan\r\nLimitZ=inf\r\n"}) {
+        inputs.push_back({std::string("range: ") + file, std::string(file)});
+    }
     for (auto& m : GenerateIniMutations(shipped, legacy::ReadKeys(), MutationKeys())) {
         inputs.push_back({"corpus: " + m.name, std::move(m.bytes)});
     }
@@ -893,6 +887,10 @@ int main() {
             Comparison2(scratch, input, Comparison1(scratch, input), skewed->config);
             scratch.Clear();
         }
+        std::printf("  %d inputs with a number clamped (N4), %d with a limit that is not finite (N2)\n", g_clamped,
+                    g_non_finite);
+        Check(g_clamped > 0, "no input clamps a number");
+        Check(g_non_finite > 0, "no input holds a limit that is not finite");
     } catch (const std::exception& e) {
         std::printf("  FAIL: threw: %s\n", e.what());
         ++g_failures;

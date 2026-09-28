@@ -68,7 +68,8 @@ cfg::ImportResult RunImport(const cfg::LegacyInput& input, Config& out) {
         return cfg::ImportResult::Absent({}, {}, follows.Concepts());
     }
 
-    out.udp_port = read.udp_port;
+    // The build read a UdpPort that is not a number as 0, which the row cannot hold (N4).
+    out.udp_port = cfg::LegacyClampToRange<C::UdpPort>(read.udp_port, "Network", "UdpPort", dropped);
     out.local_smoothing = read.local_smoothing;
     out.position.local_smoothing = read.local_smoothing;
     out.remote_smoothing = read.remote_smoothing;
@@ -83,17 +84,28 @@ cfg::ImportResult RunImport(const cfg::LegacyInput& input, Config& out) {
     out.rotation_enabled = mode.rotation_enabled;
     out.position_enabled = mode.position_enabled;
 
-    // The build held one vertical limit and used it for up and down alike.
+    // The build held one vertical limit and used it for up and down alike. The reader took any
+    // number, so one that is not finite imports as the default (N2) and one outside 0 to 10 as
+    // the nearest end (N4).
     const Config defaults;
-    out.position.limit_x = cfg::LegacyFiniteOrDefault(read.pos_limit_x, defaults.position.limit_x, "Position",
-                                                      "LimitX", dropped);
-    out.position.limit_y = cfg::LegacyFiniteOrDefault(read.pos_limit_y, defaults.position.limit_y, "Position",
-                                                      "LimitY", dropped);
+    using LimitY = cfg::schema::ConceptTraits<C::PositionLimitY>;
+    using LimitYDown = cfg::schema::ConceptTraits<C::PositionLimitYDown>;
+    static_assert(LimitY::kMin == LimitYDown::kMin && LimitY::kMax == LimitYDown::kMax,
+                  "LimitY fills both vertical rows, so they take one range");
+    out.position.limit_x = cfg::LegacyClampToRange<C::PositionLimitX>(
+        cfg::LegacyFiniteOrDefault(read.pos_limit_x, defaults.position.limit_x, "Position", "LimitX", dropped),
+        "Position", "LimitX", dropped);
+    out.position.limit_y = cfg::LegacyClampToRange<C::PositionLimitY>(
+        cfg::LegacyFiniteOrDefault(read.pos_limit_y, defaults.position.limit_y, "Position", "LimitY", dropped),
+        "Position", "LimitY", dropped);
     out.position.limit_y_down = out.position.limit_y;
-    out.position.limit_z = cfg::LegacyFiniteOrDefault(read.pos_limit_z, defaults.position.limit_z, "Position",
-                                                      "LimitZ", dropped);
-    out.position.limit_z_back = cfg::LegacyFiniteOrDefault(read.pos_limit_z_back, defaults.position.limit_z_back,
-                                                           "Position", "LimitZBack", dropped);
+    out.position.limit_z = cfg::LegacyClampToRange<C::PositionLimitZ>(
+        cfg::LegacyFiniteOrDefault(read.pos_limit_z, defaults.position.limit_z, "Position", "LimitZ", dropped),
+        "Position", "LimitZ", dropped);
+    out.position.limit_z_back = cfg::LegacyClampToRange<C::PositionLimitZBack>(
+        cfg::LegacyFiniteOrDefault(read.pos_limit_z_back, defaults.position.limit_z_back, "Position", "LimitZBack",
+                                   dropped),
+        "Position", "LimitZBack", dropped);
 
     // The Ctrl+Shift chords were registered in code beside each named key.
     out.toggle_key_name = Keys(read.toggle_key, "ToggleKey", 'Y', dropped);
@@ -140,7 +152,9 @@ cfg::ImportResult RunImport(const cfg::LegacyInput& input, Config& out) {
 
     // A setting still at what the published build shipped is no player's choice,
     // so it follows Defaults.ini. EnableOnStartup was not a setting: the build
-    // always started with tracking on.
+    // always started with tracking on. Each value is compared as read, so one
+    // that is not finite follows Defaults.ini (N2) and one N4 clamped is the
+    // player's.
     cfg::LegacyFollowsDefaultsIni follows;
     follows.Setting(C::UdpPort, read.udp_port, shipped.udp_port);
     follows.NotInLegacy(C::EnableOnStartup);
