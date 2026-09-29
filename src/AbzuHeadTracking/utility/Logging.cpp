@@ -86,12 +86,6 @@ void Init(const std::string& path) {
     g_init = true;
 }
 
-void Shutdown() {
-    std::lock_guard lk(g_mutex);
-    if (g_file.is_open()) g_file.close();
-    g_init = false;
-}
-
 void Info(std::string_view msg)  { Write("INFO",  msg); }
 void Warn(std::string_view msg)  { Write("WARN",  msg); }
 void Error(std::string_view msg) { Write("ERROR", msg); }

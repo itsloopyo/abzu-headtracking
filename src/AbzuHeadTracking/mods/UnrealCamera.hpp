@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #include "Mod.hpp"
-#include "UEEngine.hpp"
+#include "builds/build_profile.hpp"
 
 namespace ueht {
 
@@ -25,18 +25,17 @@ struct FRotator {
 /// per-frame camera-update virtual, and add the head delta to the rendered POV
 /// only, leaving ControlRotation, and so the diver's steering, clean.
 ///
-/// Offsets shift across UE 4.x/5.x and per-game build, so resolution waits until
-/// the engine is live and retries until it succeeds. Until then the mod is a
-/// no-op.
+/// Resolution waits until the engine is live and retries until it succeeds.
+/// Until then the mod is a no-op.
 class UnrealCamera final : public Mod {
 public:
-    explicit UnrealCamera(HeadTracking& tracking) : m_tracking(tracking) {}
+    UnrealCamera(HeadTracking& tracking, const builds::EngineOffsets& offsets)
+        : m_tracking(tracking), m_offsets(offsets) {}
 
     std::string_view Name() const override { return "UnrealCamera"; }
 
     std::optional<std::string> OnInitialize() override;
     void OnFrame() override;
-    void OnShutdown() override;
 
 private:
     /// Per-frame tick: resolve the PCM and install the UpdateCamera hook.
@@ -44,11 +43,12 @@ private:
 
     /// How far WalkToPlayerController got on its last run. Only a change is
     /// worth a log line - the walk is retried until the level is up.
-    enum class Stage { None, Viewport, GameInstance, LocalPlayers, LocalPlayer, PlayerController };
+    enum class Stage { None, Viewport, GameInstance, LocalPlayers, LocalPlayer, PlayerController, CameraManager };
 
     /// Walk GEngine -> GameViewport -> GameInstance -> LocalPlayer[0] ->
-    /// PlayerController. Returns the PlayerController pointer or 0. SEH-guarded.
-    uintptr_t WalkToPlayerController(uintptr_t gengine, const ue::EngineOffsets& offsets);
+    /// PlayerController -> PlayerCameraManager. Returns the PCM pointer or 0.
+    /// SEH-guarded.
+    uintptr_t WalkToCameraManager(uintptr_t gengine);
 
     // --- Decoupled (UpdateCamera) path -------------------------------------
     /// Resolve the live APlayerCameraManager instance. Returns 0 until ready.
@@ -64,7 +64,7 @@ private:
     bool InstallDecoupledHook(uintptr_t pcm);
 
     HeadTracking&             m_tracking;
-    bool                      m_resolveLogged = false; // engine/offset-table warns, once each
+    const builds::EngineOffsets m_offsets;
     Stage                     m_walkStall = Stage::None;    // last stage the GEngine walk stopped at
     uint64_t                  m_framesSinceResolve = 0;
 

@@ -8,13 +8,12 @@ namespace ueht {
 
 class Framework;
 
-/// Base class for all UEHT mods. Mods are instantiated once and survive for
-/// the lifetime of the host process. Lifecycle:
+/// Base class for all UEHT mods. Mods are instantiated once and live until the
+/// process exits; they are never torn down. Lifecycle:
 ///
 ///   1. `OnInitialize()` - once, on the init thread, after Framework is up.
 ///      Return a non-empty string to abort load (and log the reason).
 ///   2. `OnFrame()` - every Present from the render thread.
-///   3. `OnShutdown()` - once, on DLL detach (best-effort; may be skipped).
 class Mod {
 public:
     virtual ~Mod() = default;
@@ -24,7 +23,6 @@ public:
     /// @return error message on failure, std::nullopt on success.
     virtual std::optional<std::string> OnInitialize() { return std::nullopt; }
     virtual void OnFrame() {}
-    virtual void OnShutdown() {}
 };
 
 }  // namespace ueht

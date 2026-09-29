@@ -7,72 +7,10 @@
 #include <psapi.h>
 
 #include <atomic>
-#include <cstdio>
-#include <memory>
 #include <utility>
 #include <vector>
 
 namespace ueht::ue {
-
-std::string EngineVersion::ToString() const {
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "%u.%u.%u", major, minor, patch);
-    return buf;
-}
-
-EngineVersion DetectEngineVersion() {
-    wchar_t path[MAX_PATH] = {};
-    GetModuleFileNameW(nullptr, path, MAX_PATH);
-
-    const wchar_t* leaf = wcsrchr(path, L'\\');
-    leaf = leaf ? leaf + 1 : path;
-    if (_wcsicmp(leaf, L"AbzuGame-Win64-Shipping.exe") == 0) {
-        EngineVersion v;
-        v.major = 4;
-        v.minor = 12;
-        v.patch = 0;
-        return v;
-    }
-
-    DWORD handle = 0;
-    const DWORD size = GetFileVersionInfoSizeW(path, &handle);
-    if (size == 0) return {};
-
-    std::unique_ptr<uint8_t[]> buf(new uint8_t[size]);
-    if (!GetFileVersionInfoW(path, handle, size, buf.get())) return {};
-
-    VS_FIXEDFILEINFO* ffi = nullptr;
-    UINT len = 0;
-    if (!VerQueryValueW(buf.get(), L"\\", reinterpret_cast<LPVOID*>(&ffi), &len) || !ffi) return {};
-
-    EngineVersion v;
-    v.major = HIWORD(ffi->dwProductVersionMS);
-    v.minor = LOWORD(ffi->dwProductVersionMS);
-    v.patch = HIWORD(ffi->dwProductVersionLS);
-    if (v.major < 4 || v.major > 5) return {};
-    return v;
-}
-
-namespace {
-
-// UE 4.12 (ABZU) - offsets measured with Ghidra against the property
-// registration immediates in a legitimately owned AbzuGame-Win64-Shipping.exe.
-// Byte offsets only; no game code is reproduced here.
-constexpr EngineOffsets kUE4_12_Abzu = {
-    /*engine_to_game_instance              */ 0x5E8, // UEngine::GameViewport (UGameViewportClient*)
-    /*game_instance_to_local_players       */ 0x38,  // UGameInstance::LocalPlayers (TArray)
-    /*local_player_to_player_controller    */ 0x30,  // UPlayer::PlayerController (ULocalPlayer inherits UPlayer)
-    /*controller_to_control_rotation       */ 0x3B0, // AController::ControlRotation (FRotator) - source UE reads each tick
-    /*player_controller_to_camera_manager  */ 0x418, // APlayerController::PlayerCameraManager (confirmed in-game)
-};
-
-}  // namespace
-
-std::optional<EngineOffsets> OffsetsFor(EngineVersion v) {
-    if (!v.valid()) return std::nullopt;
-    if (v.major == 4 && v.minor == 12) return kUE4_12_Abzu;
-    return std::nullopt;
-}
 
 // ---------------------------------------------------------------------------
 // GEngine discovery
@@ -84,13 +22,9 @@ std::optional<EngineOffsets> OffsetsFor(EngineVersion v) {
 // pointed-to UObject's UClass (at offset 0x10 in UE4) matches the known
 // UEngine UClass global.
 //
-// For ABZU specifically, the UEngine UClass pointer is the DAT_142adde30
-// global - that's the `Z_Registration_Info_UClass_UEngine.OuterSingleton`
-// in UE source. RVA = 0x02adde30 from imageBase.
+// The UEngine UClass slot is build-specific and comes from the build profile.
 
 namespace {
-
-constexpr uintptr_t kAbzuUEngineClassRVA = 0x02adde30;
 
 std::atomic<uintptr_t> g_cached_gengine{0};
 std::atomic<bool>      g_resolve_attempted{false};
@@ -144,7 +78,7 @@ bool LooksLikePointer(uintptr_t base, size_t size, uintptr_t p) {
 
 }  // namespace
 
-uintptr_t LocateGEngine() {
+uintptr_t LocateGEngine(uintptr_t uengine_class_rva) {
     if (auto cached = g_cached_gengine.load(std::memory_order_acquire); cached != 0) {
         return cached;
     }
@@ -162,10 +96,10 @@ uintptr_t LocateGEngine() {
 
     // Read UEngine UClass pointer from the well-known static slot.
     uintptr_t uengine_class = 0;
-    if (!SafeRead(module_base + kAbzuUEngineClassRVA, uengine_class) || uengine_class == 0) {
+    if (!SafeRead(module_base + uengine_class_rva, uengine_class) || uengine_class == 0) {
         LogOnce(g_warned_class_slot,
                 "LocateGEngine: UEngine UClass slot at +0x%llX is empty - engine not initialized yet; retrying",
-                static_cast<unsigned long long>(kAbzuUEngineClassRVA));
+                static_cast<unsigned long long>(uengine_class_rva));
         g_resolve_attempted.store(false, std::memory_order_release);
         return 0;
     }

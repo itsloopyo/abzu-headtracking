@@ -63,17 +63,23 @@ std::optional<std::string> HeadTracking::OnInitialize() {
     return std::nullopt;
 }
 
-void HeadTracking::OnFrame() {
+void HeadTracking::Update() {
     const auto now = std::chrono::steady_clock::now();
     const float dt = std::chrono::duration<float>(now - m_lastFrame).count();
     m_lastFrame = now;
 
-    if (!Enabled() || !m_receiver || !m_receiver->IsReceiving()) {
-        m_outYaw.store(0.0f, std::memory_order_relaxed);
-        m_outPitch.store(0.0f, std::memory_order_relaxed);
-        m_outRoll.store(0.0f, std::memory_order_relaxed);
-        m_outPosValid.store(false, std::memory_order_release);
-        m_wasReceiving = false;  // resume eases in from a clean interpolator segment
+    if (!Enabled()) {
+        m_outPose.yaw = m_outPose.pitch = m_outPose.roll = 0.0f;
+        m_outPos.valid = false;
+        m_wasReceiving = false;
+        return;
+    }
+
+    // Tracking loss holds the last published pose and position rather than
+    // snapping the view to centre; the processors' smoothing then blends from
+    // that held pose once packets resume.
+    if (!m_receiver->IsReceiving()) {
+        m_wasReceiving = false;
         return;
     }
 
@@ -84,10 +90,9 @@ void HeadTracking::OnFrame() {
     float yaw{}, pitch{}, roll{};
     if (!m_receiver->GetRotation(yaw, pitch, roll)) return;
 
-    static bool s_loggedFirst = false;
-    if (!s_loggedFirst) {
+    if (!m_loggedFirstSample) {
         UEHT_LOG(Info, "HeadTracking: first OpenTrack sample yaw=%.2f pitch=%.2f roll=%.2f", yaw, pitch, roll);
-        s_loggedFirst = true;
+        m_loggedFirstSample = true;
     }
 
     // New-sample edge: the receiver's packet timestamp changes only when fresh
@@ -97,15 +102,12 @@ void HeadTracking::OnFrame() {
     const bool isNew = (sampleTs != m_lastSampleTs);
     m_lastSampleTs = sampleTs;
 
-    // A fresh resume after data loss: clear the interpolator history and smoothing
-    // so we ease in from the live sample rather than from a stale segment. Done on
-    // the game thread so nothing races Process.
-    const bool resume = !m_wasReceiving;
-    m_wasReceiving = true;
-    if (resume) {
+    // A resume after loss or a re-enable drops the interpolators' history, so
+    // they do not extrapolate from the segment before the gap.
+    if (!m_wasReceiving) {
         m_poseInterp.Reset();
         m_posInterp.Reset();
-        m_posProcessor.ResetSmoothing();
+        m_wasReceiving = true;
     }
 
     // Receiver -> interpolator -> processor.
@@ -114,63 +116,36 @@ void HeadTracking::OnFrame() {
 
     // In position-only mode the head must not rotate the view, so publish a zero
     // delta (the processor still runs to keep its smoothing state warm for the
-    // next mode switch). pose stays "valid" via the timestamp; a zero delta is a
-    // no-op in both the world-yaw add and the camera-local compose paths.
+    // next mode switch). A zero delta is a no-op in both the world-yaw add and
+    // the camera-local compose paths.
     const bool rotOn = RotationEnabled();
-    m_outYaw  .store(rotOn ? processed.yaw   : 0.0f, std::memory_order_relaxed);
-    m_outPitch.store(rotOn ? processed.pitch : 0.0f, std::memory_order_relaxed);
-    m_outRoll .store(rotOn ? processed.roll  : 0.0f, std::memory_order_relaxed);
-    m_outTs   .store(processed.timestamp_us, std::memory_order_release);
+    m_outPose.yaw          = rotOn ? processed.yaw   : 0.0f;
+    m_outPose.pitch        = rotOn ? processed.pitch : 0.0f;
+    m_outPose.roll         = rotOn ? processed.roll  : 0.0f;
+    m_outPose.timestamp_us = processed.timestamp_us;
 
-    // --- Positional tracking (6DOF) ---------------------------------------
     float px{}, py{}, pz{};
     if (!PositionEnabled() || !m_receiver->GetPosition(px, py, pz)) {
-        m_outPosValid.store(false, std::memory_order_release);
+        m_outPos.valid = false;
         return;
     }
 
     // Tag with the receiver stamp so the position interpolator shares the same
     // new-sample detection as the pose interpolator.
     const cameraunlock::PositionData raw(px, py, pz, sampleTs);
-
     const cameraunlock::PositionData interpPos = m_posInterp.Update(raw, dt);
 
-    // Tracker-pivot compensation wants the PHYSICAL head rotation - the centered,
-    // smoothed pose before per-axis sensitivity and inversion. `processed` carries
-    // both, which scales the compensation by the sensitivity factor and applies it
-    // backwards on an inverted axis.
+    // Tracker-pivot compensation wants the physical head rotation, which is the
+    // processor's smoothed pose rather than the mode-gated one published above.
     float physYaw{}, physPitch{}, physRoll{};
     m_processor.GetSmoothedRotation(physYaw, physPitch, physRoll);
     const auto rotQ = cameraunlock::math::Quat4::FromYawPitchRoll(physYaw, physPitch, physRoll);
     const cameraunlock::math::Vec3 offset = m_posProcessor.Process(interpPos, rotQ, dt);
 
-    m_outPosX.store(offset.x, std::memory_order_relaxed);
-    m_outPosY.store(offset.y, std::memory_order_relaxed);
-    m_outPosZ.store(offset.z, std::memory_order_relaxed);
-    m_outPosValid.store(true, std::memory_order_release);
-}
-
-void HeadTracking::OnShutdown() {
-    if (m_hotkeys)  { m_hotkeys->Stop();  m_hotkeys.reset(); }
-    if (m_receiver) { m_receiver->Stop(); m_receiver.reset(); }
-}
-
-cameraunlock::TrackingPose HeadTracking::CurrentPose() const {
-    cameraunlock::TrackingPose p;
-    p.yaw          = m_outYaw  .load(std::memory_order_relaxed);
-    p.pitch        = m_outPitch.load(std::memory_order_relaxed);
-    p.roll         = m_outRoll .load(std::memory_order_relaxed);
-    p.timestamp_us = m_outTs   .load(std::memory_order_acquire);
-    return p;
-}
-
-HeadPosition HeadTracking::CurrentPosition() const {
-    HeadPosition p;
-    p.valid = m_outPosValid.load(std::memory_order_acquire);
-    p.x = m_outPosX.load(std::memory_order_relaxed);
-    p.y = m_outPosY.load(std::memory_order_relaxed);
-    p.z = m_outPosZ.load(std::memory_order_relaxed);
-    return p;
+    m_outPos.x = offset.x;
+    m_outPos.y = offset.y;
+    m_outPos.z = offset.z;
+    m_outPos.valid = true;
 }
 
 void HeadTracking::SyncConnectionLocality() {

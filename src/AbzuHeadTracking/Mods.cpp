@@ -6,9 +6,9 @@
 
 namespace ueht {
 
-Mods::Mods() {
+Mods::Mods(const builds::BuildProfile& build) {
     auto tracking = std::make_unique<HeadTracking>();
-    auto camera   = std::make_unique<UnrealCamera>(*tracking);
+    auto camera   = std::make_unique<UnrealCamera>(*tracking, build.offsets);
 
     m_tracking = tracking.get();
     m_camera   = camera.get();
@@ -32,14 +32,6 @@ std::optional<std::string> Mods::Initialize() {
 
 void Mods::OnFrame() {
     for (auto& m : m_mods) m->OnFrame();
-}
-
-void Mods::Shutdown() {
-    // Reverse order so the camera lets go of its hooks before HeadTracking
-    // stops the receiver thread.
-    for (auto it = m_mods.rbegin(); it != m_mods.rend(); ++it) {
-        (*it)->OnShutdown();
-    }
 }
 
 }  // namespace ueht

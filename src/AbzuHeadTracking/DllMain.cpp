@@ -15,15 +15,15 @@ DWORD WINAPI InitThread(LPVOID) {
 }  // namespace
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
-    switch (reason) {
-        case DLL_PROCESS_ATTACH:
-            DisableThreadLibraryCalls(hModule);
-            CloseHandle(CreateThread(nullptr, 0, &InitThread, hModule, 0, nullptr));
-            break;
-        case DLL_PROCESS_DETACH:
-            ueht::Framework::Get().Shutdown();
-            break;
-        default: break;
+    if (reason == DLL_PROCESS_ATTACH) {
+        DisableThreadLibraryCalls(hModule);
+        // The game's code jumps into ours through the hooks, so an unload would
+        // crash it. Pinning means detach only ever comes at process exit, where
+        // there is nothing to tear down that the OS does not reclaim itself.
+        HMODULE pinned = nullptr;
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+                           reinterpret_cast<LPCWSTR>(&DllMain), &pinned);
+        CloseHandle(CreateThread(nullptr, 0, &InitThread, hModule, 0, nullptr));
     }
     return TRUE;
 }

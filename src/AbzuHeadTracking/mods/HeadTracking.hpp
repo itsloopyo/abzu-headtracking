@@ -28,22 +28,27 @@ struct HeadPosition {
 };
 
 /// Owns the OpenTrack UDP receiver, the processing pipeline, and the hotkey
-/// poller. Produces a processed `TrackingPose` consumed by `UnrealCamera`.
+/// poller. `Update` runs the pipeline on the game thread, from the UpdateCamera
+/// detour, so the pose is sampled for the frame the engine is simulating and is
+/// read back on the same thread that wrote it.
 class HeadTracking final : public Mod {
 public:
     std::string_view Name() const override { return "HeadTracking"; }
 
     std::optional<std::string> OnInitialize() override;
-    void OnFrame() override;
-    void OnShutdown() override;
 
-    /// Latest processed pose (yaw/pitch/roll in degrees). Returns Zero() if the
-    /// receiver hasn't bound yet or tracking is toggled off.
-    cameraunlock::TrackingPose CurrentPose() const;
+    /// Game thread only. Samples the receiver and publishes the processed pose
+    /// and position read by CurrentPose / CurrentPosition.
+    void Update();
+
+    /// Latest processed pose (yaw/pitch/roll in degrees). Invalid (timestamp 0)
+    /// until the first sample; zero while tracking is toggled off; held at the
+    /// last value while the tracker is not sending. Game thread only.
+    const cameraunlock::TrackingPose& CurrentPose() const { return m_outPose; }
 
     /// Latest processed positional offset (meters, tracker axes). `valid` is
-    /// false when position tracking is off or no sample has arrived.
-    HeadPosition CurrentPosition() const;
+    /// false when position tracking is off or no sample has arrived. Game thread only.
+    const HeadPosition& CurrentPosition() const { return m_outPos; }
 
     bool Enabled() const { return m_enabled.load(std::memory_order_acquire); }
     void SetEnabled(bool e) { m_enabled.store(e, std::memory_order_release); }
@@ -56,7 +61,6 @@ public:
     void CycleTrackingMode();
 
     /// true = horizon-locked (world up) yaw; false = camera-local yaw.
-    /// Read by UnrealCamera's hook each frame to pick the rotation-application path.
     bool WorldSpaceYaw() const { return m_worldSpaceYaw.load(std::memory_order_acquire); }
     /// Flips the yaw mode and saves it.
     void ToggleYawMode();
@@ -81,25 +85,17 @@ private:
     // packet; an unchanged stamp across frames means "no new data, keep interpolating".
     int64_t m_lastSampleTs = 0;
     bool    m_wasReceiving = false;
+    bool    m_loggedFirstSample = false;
     // Last locality pushed to the processors; drives LocalSmoothing vs RemoteSmoothing.
     bool    m_isRemoteConnection = false;
 
-    // Initialised from the config at startup.
+    // Written by the hotkey poller thread, read on the game thread.
     std::atomic<bool> m_enabled{true};
     std::atomic<bool> m_worldSpaceYaw{true};
     std::atomic<cameraunlock::TrackingMode> m_mode{cameraunlock::TrackingMode::RotationAndPosition};
 
-    // Latest processed pose, published from OnFrame.
-    mutable std::atomic<float> m_outYaw  {0.0f};
-    mutable std::atomic<float> m_outPitch{0.0f};
-    mutable std::atomic<float> m_outRoll {0.0f};
-    mutable std::atomic<int64_t> m_outTs {0};
-
-    // Latest processed position offset (meters, tracker axes).
-    mutable std::atomic<float> m_outPosX{0.0f};
-    mutable std::atomic<float> m_outPosY{0.0f};
-    mutable std::atomic<float> m_outPosZ{0.0f};
-    mutable std::atomic<bool>  m_outPosValid{false};
+    cameraunlock::TrackingPose m_outPose;
+    HeadPosition               m_outPos;
 
     std::chrono::steady_clock::time_point m_lastFrame{};
 };

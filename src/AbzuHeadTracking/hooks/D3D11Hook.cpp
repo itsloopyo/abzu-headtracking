@@ -17,11 +17,9 @@ namespace {
 
 using Microsoft::WRL::ComPtr;
 
-using PresentFn      = HRESULT (STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
-using ResizeBuffersFn = HRESULT (STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
+using PresentFn = HRESULT (STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
 
-PresentFn       g_origPresent       = nullptr;
-ResizeBuffersFn g_origResizeBuffers = nullptr;
+PresentFn         g_origPresent = nullptr;
 std::atomic<bool> g_inPresent{false};
 
 D3D11Hook::PresentCallback g_callback;
@@ -30,19 +28,10 @@ HRESULT STDMETHODCALLTYPE PresentDetour(IDXGISwapChain* swap, UINT sync, UINT fl
     // Re-entrancy guard: many overlays call Present indirectly from their own
     // callbacks.
     if (!g_inPresent.exchange(true, std::memory_order_acq_rel)) {
-        try {
-            if (g_callback) g_callback();
-        } catch (...) {
-            // Swallow - never propagate into the engine's render thread.
-        }
+        g_callback();
         g_inPresent.store(false, std::memory_order_release);
     }
     return g_origPresent(swap, sync, flags);
-}
-
-HRESULT STDMETHODCALLTYPE ResizeBuffersDetour(IDXGISwapChain* swap, UINT count, UINT w, UINT h,
-                                              DXGI_FORMAT fmt, UINT flags) {
-    return g_origResizeBuffers(swap, count, w, h, fmt, flags);
 }
 
 /// Creates a 1x1 windowless swapchain so we can read the IDXGISwapChain vtable.
@@ -83,12 +72,7 @@ bool CreateDummySwapchain(ComPtr<IDXGISwapChain>& outSwap, ComPtr<ID3D11Device>&
 
 }  // namespace
 
-D3D11Hook::D3D11Hook() = default;
-D3D11Hook::~D3D11Hook() { Unhook(); }
-
 bool D3D11Hook::Hook(PresentCallback on_present) {
-    if (m_hooked) return true;
-
     ComPtr<IDXGISwapChain> swap;
     ComPtr<ID3D11Device>   dev;
     if (!CreateDummySwapchain(swap, dev)) {
@@ -97,8 +81,7 @@ bool D3D11Hook::Hook(PresentCallback on_present) {
     }
 
     auto** vtbl = *reinterpret_cast<void***>(swap.Get());
-    void* present       = vtbl[8];   // IDXGISwapChain::Present
-    void* resizeBuffers = vtbl[13];  // IDXGISwapChain::ResizeBuffers
+    void* present = vtbl[8];  // IDXGISwapChain::Present
 
     g_callback = std::move(on_present);
 
@@ -111,26 +94,14 @@ bool D3D11Hook::Hook(PresentCallback on_present) {
         UEHT_LOG(Error, "D3D11Hook: failed to create Present hook");
         return false;
     }
-    mh.CreateHook(resizeBuffers, reinterpret_cast<void*>(&ResizeBuffersDetour),
-                  reinterpret_cast<void**>(&g_origResizeBuffers));
 
     if (mh.EnableHook(present) != HookStatus::Ok) {
         UEHT_LOG(Error, "D3D11Hook: failed to enable Present hook");
         return false;
     }
-    mh.EnableHook(resizeBuffers);
 
     UEHT_LOG(Info, "D3D11Hook: Present @ %p hooked", present);
-    m_hooked = true;
     return true;
-}
-
-void D3D11Hook::Unhook() {
-    if (!m_hooked) return;
-    // Cleanup is centralized in HookManager::Shutdown when the framework
-    // tears down; per-hook removal here would race the render thread.
-    m_hooked = false;
-    g_callback = nullptr;
 }
 
 }  // namespace ueht::hooks

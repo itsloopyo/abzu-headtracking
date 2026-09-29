@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "Mod.hpp"
+#include "builds/build_profile.hpp"
 
 namespace ueht {
 
@@ -13,7 +14,7 @@ class UnrealCamera;
 /// Owns the list of mods. Lifecycle is driven by `Framework`.
 class Mods {
 public:
-    Mods();
+    explicit Mods(const builds::BuildProfile& build);
     ~Mods();
 
     /// Calls `OnInitialize` on each mod, in order. First failure aborts.
@@ -22,8 +23,6 @@ public:
 
     /// Per-frame tick, fired from the Present hook.
     void OnFrame();
-
-    void Shutdown();
 
     HeadTracking& Tracking() { return *m_tracking; }
     UnrealCamera& Camera()   { return *m_camera; }

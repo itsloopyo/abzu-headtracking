@@ -3,13 +3,13 @@ set(ABZU_DLL_SOURCES
     Framework.cpp
     Mods.cpp
     Config.cpp
+    builds/build_registry.cpp
+    builds/steam_offsets.cpp
     hooks/D3D11Hook.cpp
-    hooks/D3D12Hook.cpp
     mods/HeadTracking.cpp
     mods/UEEngine.cpp
     mods/UnrealCamera.cpp
     utility/Logging.cpp
-    utility/Scan.cpp
     ${CMAKE_SOURCE_DIR}/src/legacy_config/legacy_config.cpp
 )
 

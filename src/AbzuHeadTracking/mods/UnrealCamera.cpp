@@ -104,8 +104,10 @@ bool TryAddPosition(uintptr_t loc_addr, const LeanOffsetUU& delta) {
 void __fastcall UpdateCameraDetour(void* pcm, float dt) {
     g_origUpdateCamera(pcm, dt);
 
-    auto* tracking = g_hookTracking;
-    if (tracking == nullptr || pcm == nullptr) return;
+    // Set before the hook is enabled and never cleared: the mod is never
+    // unloaded (DllMain pins it).
+    HeadTracking* const tracking = g_hookTracking;
+    tracking->Update();
     if (!tracking->Enabled()) return;
 
     const auto base    = reinterpret_cast<uintptr_t>(pcm);
@@ -116,7 +118,7 @@ void __fastcall UpdateCameraDetour(void* pcm, float dt) {
     if (tracking->PositionEnabled()) {
         const uint32_t locOff = g_locationOffset.load(std::memory_order_relaxed);
         if (locOff != 0) {
-            const auto posn = tracking->CurrentPosition();
+            const HeadPosition& posn = tracking->CurrentPosition();
             if (posn.valid) {
                 float cleanYaw = 0.0f;
                 if (rotOff != 0) {
@@ -129,7 +131,7 @@ void __fastcall UpdateCameraDetour(void* pcm, float dt) {
         }
     }
 
-    const auto pose = tracking->CurrentPose();
+    const cameraunlock::TrackingPose& pose = tracking->CurrentPose();
     if (!pose.IsValid()) return;
 
     // ABZU's roll runs opposite the tracker's. Every build shipped
@@ -183,11 +185,7 @@ void UnrealCamera::TickDecoupled() {
     // Injection itself happens inside UpdateCameraDetour on the game thread.
 }
 
-void UnrealCamera::OnShutdown() {
-    g_hookTracking = nullptr;  // stop the detour touching tracking after teardown
-}
-
-uintptr_t UnrealCamera::WalkToPlayerController(uintptr_t gengine, const ue::EngineOffsets& o) {
+uintptr_t UnrealCamera::WalkToCameraManager(uintptr_t gengine) {
     // The whole walk is unresolvable until the level is up, and the caller
     // retries every ~120 frames, so a warn per stage per attempt is thousands of
     // duplicate lines across a splash and a level load. Report a stage only when
@@ -200,23 +198,23 @@ uintptr_t UnrealCamera::WalkToPlayerController(uintptr_t gengine, const ue::Engi
         }
         return uintptr_t{0};
     };
+    const builds::EngineOffsets& o = m_offsets;
 
     uintptr_t viewport = 0;
-    if (!SafeRead(gengine + o.engine_to_game_instance, viewport) || viewport == 0) {
+    if (!SafeRead(gengine + o.engine_to_game_viewport, viewport) || viewport == 0) {
         return stall(Stage::Viewport,
-                     log::Format("Walk: GameViewport ptr null at GEngine+0x%zX",
-                                 o.engine_to_game_instance));
+                     log::Format("Walk: GameViewport null at GEngine+0x%zX", o.engine_to_game_viewport));
     }
-    uintptr_t game_instance = 0;  // UGameViewportClient::GameInstance at +0x88 (UE 4.12 ABZU)
-    if (!SafeRead(viewport + 0x88, game_instance) || game_instance == 0) {
-        return stall(Stage::GameInstance, "Walk: GameInstance ptr null at Viewport+0x88");
+    uintptr_t game_instance = 0;
+    if (!SafeRead(viewport + o.game_viewport_to_game_instance, game_instance) || game_instance == 0) {
+        return stall(Stage::GameInstance,
+                     log::Format("Walk: GameInstance null at Viewport+0x%zX", o.game_viewport_to_game_instance));
     }
     uintptr_t local_players_data = 0;
     if (!SafeRead(game_instance + o.game_instance_to_local_players, local_players_data) ||
         local_players_data == 0) {
         return stall(Stage::LocalPlayers,
-                     log::Format("Walk: LocalPlayers data null at GI+0x%zX",
-                                 o.game_instance_to_local_players));
+                     log::Format("Walk: LocalPlayers data null at GI+0x%zX", o.game_instance_to_local_players));
     }
     uintptr_t local_player = 0;
     if (!SafeRead(local_players_data, local_player) || local_player == 0) {
@@ -226,11 +224,17 @@ uintptr_t UnrealCamera::WalkToPlayerController(uintptr_t gengine, const ue::Engi
     if (!SafeRead(local_player + o.local_player_to_player_controller, player_controller) ||
         player_controller == 0) {
         return stall(Stage::PlayerController,
-                     log::Format("Walk: PlayerController null at LP+0x%zX",
-                                 o.local_player_to_player_controller));
+                     log::Format("Walk: PlayerController null at LP+0x%zX", o.local_player_to_player_controller));
+    }
+    uintptr_t pcm = 0;
+    if (!SafeRead(player_controller + o.player_controller_to_camera_manager, pcm) || pcm == 0) {
+        return stall(Stage::CameraManager,
+                     log::Format("Walk: PlayerCameraManager null at PC+0x%zX (PC=0x%llX)",
+                                 o.player_controller_to_camera_manager,
+                                 (unsigned long long)player_controller));
     }
     m_walkStall = Stage::None;
-    return player_controller;
+    return pcm;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,33 +242,14 @@ uintptr_t UnrealCamera::WalkToPlayerController(uintptr_t gengine, const ue::Engi
 // ---------------------------------------------------------------------------
 
 uintptr_t UnrealCamera::ResolveCameraManager() {
-    const auto version = ue::DetectEngineVersion();
-    if (!version.valid()) return 0;
-    const auto offsets = ue::OffsetsFor(version);
-    if (!offsets || offsets->player_controller_to_camera_manager == 0) {
-        if (!m_resolveLogged) {
-            UEHT_LOG(Warn, "UnrealCamera: no PlayerCameraManager offset for UE %s.",
-                     version.ToString().c_str());
-            m_resolveLogged = true;
-        }
-        return 0;
-    }
-    const auto gengine = ue::LocateGEngine();
+    const auto gengine = ue::LocateGEngine(m_offsets.uengine_class_rva);
     if (gengine == 0) return 0;
 
-    const uintptr_t pc = WalkToPlayerController(gengine, *offsets);
-    if (pc == 0) return 0;
+    const uintptr_t pcm = WalkToCameraManager(gengine);
+    if (pcm == 0) return 0;
 
-    uintptr_t pcm = 0;
-    if (!SafeRead(pc + offsets->player_controller_to_camera_manager, pcm) || pcm == 0) {
-        UEHT_LOG(Warn, "UnrealCamera: PlayerCameraManager null at PC+0x%zX",
-                 offsets->player_controller_to_camera_manager);
-        return 0;
-    }
     m_pcm.store(pcm, std::memory_order_release);
-    m_resolveLogged = false;
-    UEHT_LOG(Info, "UnrealCamera: PlayerCameraManager @ 0x%llX (PC=0x%llX)",
-             (unsigned long long)pcm, (unsigned long long)pc);
+    UEHT_LOG(Info, "UnrealCamera: PlayerCameraManager @ 0x%llX", (unsigned long long)pcm);
     return pcm;
 }
 
@@ -396,13 +381,11 @@ bool UnrealCamera::InstallDecoupledHook(uintptr_t pcm) {
     if (mh.CreateHook(reinterpret_cast<void*>(target),
                       reinterpret_cast<void*>(&UpdateCameraDetour),
                       reinterpret_cast<void**>(&g_origUpdateCamera)) != HookStatus::Ok) {
-        g_hookTracking = nullptr;
         return abandon(log::Format(
             "InstallDecoupledHook: CreateHook failed for slot %d (target 0x%llX); staying dormant.",
             slot, (unsigned long long)target));
     }
     if (mh.EnableHook(reinterpret_cast<void*>(target)) != HookStatus::Ok) {
-        g_hookTracking = nullptr;
         return abandon(log::Format(
             "InstallDecoupledHook: EnableHook failed for slot %d; staying dormant.", slot));
     }

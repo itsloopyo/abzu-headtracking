@@ -8,7 +8,6 @@ namespace ueht::log {
 /// Lines written before Init are kept and go to the file Init opens. An empty
 /// path opens no file and drops them.
 void Init(const std::string& path);
-void Shutdown();
 
 void Info(std::string_view msg);
 void Warn(std::string_view msg);

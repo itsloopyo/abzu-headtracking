@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "Mods.hpp"
+#include "builds/build_profile.hpp"
 #include "hooks/D3D11Hook.hpp"
-#include "hooks/D3D12Hook.hpp"
 #include "utility/Logging.hpp"
 
 #include "ueht/Version.hpp"
@@ -46,8 +46,12 @@ std::string ResolveLogPath(const std::string& configured) {
 }  // namespace
 
 Framework& Framework::Get() {
-    static Framework s;
-    return s;
+    // Never destroyed. A static's destructor runs in DLL_PROCESS_DETACH under the
+    // loader lock, after the OS has already killed every other thread, and this
+    // one would join the receiver and hotkey threads and take the log mutex that
+    // a killed thread may have been holding.
+    static Framework* const s = new Framework();
+    return *s;
 }
 
 bool Framework::Initialize() {
@@ -84,6 +88,11 @@ bool Framework::DoInitialize() {
         log::Init({});
     }
 
+    // Every address this mod reads or hooks is pinned to one shipped EXE. On any
+    // other build nothing is hooked and no thread is started.
+    const builds::BuildProfile* const build = builds::MatchRunningBuild();
+    if (build == nullptr) return false;
+
     // MinHook is shared between cameraunlock_hooks and our D3D hooks.
     using cameraunlock::hooks::HookManager;
     auto& mh = HookManager::Instance();
@@ -95,35 +104,20 @@ bool Framework::DoInitialize() {
         return false;
     }
 
-    m_mods = std::make_unique<Mods>();
+    m_mods = std::make_unique<Mods>(*build);
     if (auto err = m_mods->Initialize(); err.has_value()) {
         UEHT_LOG(Error, "Mod initialization failed: %s", err->c_str());
         return false;
     }
 
     m_d3d11 = std::make_unique<hooks::D3D11Hook>();
-    m_d3d12 = std::make_unique<hooks::D3D12Hook>();
-
-    // D3D12 first - many UE5 games run on it. If D3D12 isn't loaded in the
-    // process we fall through to D3D11.
-    if (!m_d3d12->Hook([this]{ OnFrame(); })) {
-        if (!m_d3d11->Hook([this]{ OnFrame(); })) {
-            UEHT_LOG(Warn, "Neither D3D11 nor D3D12 Present could be hooked yet. "
-                           "Will retry on first device creation.");
-        }
+    if (!m_d3d11->Hook([this]{ OnFrame(); })) {
+        UEHT_LOG(Error, "D3D11 Present could not be hooked; head tracking stays off.");
+        return false;
     }
 
     UEHT_LOG(Info, "UEHT initialized.");
     return true;
-}
-
-void Framework::Shutdown() {
-    UEHT_LOG(Info, "UEHT shutting down");
-    if (m_d3d11) m_d3d11->Unhook();
-    if (m_d3d12) m_d3d12->Unhook();
-    if (m_mods)  m_mods->Shutdown();
-    cameraunlock::hooks::HookManager::Instance().Shutdown();
-    log::Shutdown();
 }
 
 void Framework::OnFrame() {
