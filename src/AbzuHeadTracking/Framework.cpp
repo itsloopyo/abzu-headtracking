@@ -88,8 +88,6 @@ bool Framework::DoInitialize() {
         log::Init({});
     }
 
-    // Every address this mod reads or hooks is pinned to one shipped EXE. On any
-    // other build nothing is hooked and no thread is started.
     const builds::BuildProfile* const build = builds::MatchRunningBuild();
     if (build == nullptr) return false;
 

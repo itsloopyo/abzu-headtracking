@@ -238,7 +238,13 @@ LogPath=HeadTracking.log
 ```
 <!-- /cameraunlock:config -->
 
-The `[Camera]` and `[Position]` sections also carry engine offsets (`UpdateCameraSlot`, `PovOffset`, `CacheOffset`, `LocationOffset`) confirmed for the shipping ABZU build. They are written as comments at those values. Leave them alone unless a game patch moves them.
+The mod discovers the camera hook and its fields from the installed game and
+validates their live layouts before applying tracking. The engine settings
+`UpdateCameraSlot`, `PovOffset`, `CacheOffset` and `LocationOffset` supply values
+only for the exact historical fallback. With runtime discovery, zero still
+disables the corresponding camera write, and a negative slot disables the hook.
+`CacheOffset=0` leaves the secondary rotation write off. Leave these settings
+alone; `HeadTracking.log` reports discovery failures that may need a mod update.
 
 ## Troubleshooting
 

@@ -1,53 +1,38 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 itsloopyo
 #include "build_profile.hpp"
-
-#include <windows.h>
-
+#include "runtime_discovery.hpp"
 #include "utility/Logging.hpp"
+#include <windows.h>
+#include <vector>
 
 namespace ueht::builds {
-
-namespace {
-
-// Newest first: the top entry is the one an unknown build is compared against
-// to word the dormancy line.
-const BuildProfile* const kKnownProfiles[] = {
-    &kSteamProfile_20201114,
-};
-
-}  // namespace
-
-const BuildProfile* MatchRunningBuild() {
-    using cameraunlock::memory::FingerprintMismatch;
+const BuildProfile* MatchRunningBuild(void* module) {
+    ResetRuntimeDiscovery();
+    auto host=module ? static_cast<HMODULE>(module) : GetModuleHandleW(nullptr);
     cameraunlock::memory::PeFingerprint running{};
-    if (!cameraunlock::memory::ReadPeFingerprint(GetModuleHandleW(nullptr), running)) {
-        UEHT_LOG(Error, "Could not read the game executable's PE header; head tracking stays off.");
+    if(!cameraunlock::memory::ReadPeFingerprint(host,running)) {
+        UEHT_LOG(Error,"Could not read executable header; tracking remains off.");return nullptr;
+    }
+    const bool exact=running.Matches(kSteamProfile_20201114.fingerprint);
+    std::vector<std::uint8_t> bytes(running.SizeOfImage);SIZE_T copied=0;
+    if(!ReadProcessMemory(GetCurrentProcess(),host,bytes.data(),bytes.size(),&copied) || copied!=bytes.size()){
+        UEHT_LOG(Error,"Executable snapshot failed: Win32 error %lu",GetLastError());return nullptr;
+    }
+    Bootstrap found{};std::string reason;
+    const ImageView view{bytes.data(),bytes.size(),reinterpret_cast<std::uintptr_t>(host)};
+    if(!DiscoverBootstrap(view,found,reason)){
+        UEHT_LOG(Warn,"discovery: %s",reason.c_str());
+        if(exact){UEHT_LOG(Info,"Using exact historical profile %s",kSteamProfile_20201114.name);return &kSteamProfile_20201114;}
         return nullptr;
     }
-    for (const BuildProfile* profile : kKnownProfiles) {
-        if (running.Matches(profile->fingerprint)) {
-            UEHT_LOG(Info, "Game build: %s", profile->name);
-            return profile;
-        }
+    if(exact && found.engineClass!=kSteamProfile_20201114.offsets.uengine_class_rva){
+        UEHT_LOG(Error,"Discovery disagrees with historical engine class; tracking remains off.");return nullptr;
     }
-
-    const BuildProfile& primary = *kKnownProfiles[0];
-    const char* why = "";
-    switch (cameraunlock::memory::ClassifyMismatch(running, primary.fingerprint)) {
-        case FingerprintMismatch::Newer:
-            why = "The game is newer than any build this mod knows; check for an updated mod.";
-            break;
-        case FingerprintMismatch::Older:
-            why = "The game is older than the builds this mod knows; let the store finish updating.";
-            break;
-        case FingerprintMismatch::Differs:
-            why = "The executable has been modified; this mod does not engage on a modified binary.";
-            break;
-    }
-    UEHT_LOG(Warn,
-             "Unknown game build (TimeDateStamp=0x%08X SizeOfImage=0x%08X CheckSum=0x%08X, newest known %s). "
-             "%s Head tracking stays off and the game runs unmodified.",
-             running.TimeDateStamp, running.SizeOfImage, running.CheckSum, primary.name, why);
-    return nullptr;
+    StartRuntimeDiscovery(view,found,exact);
+    static BuildProfile discovered{};
+    discovered={"runtime-discovered",running,{found.engineClass,0,0,0,0,0}};
+    UEHT_LOG(Info,"discovery: names=0x%X EngineClass=0x%X; waiting for live camera validation",found.names,found.engineClass);
+    return &discovered;
 }
-
-}  // namespace ueht::builds
+}

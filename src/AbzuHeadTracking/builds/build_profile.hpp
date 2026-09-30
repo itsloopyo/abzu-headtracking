@@ -7,10 +7,6 @@
 
 namespace ueht::builds {
 
-// Everything pinned to one shipped AbzuGame-Win64-Shipping.exe. On any other
-// build these point at unrelated memory, so nothing that consumes one runs until
-// the running executable has matched a profile. A patched or other-store build
-// gets a new profile appended beside the existing ones, never an edit to them.
 struct EngineOffsets {
     // The UEngine UClass static (Z_Registration_Info_UClass_UEngine.OuterSingleton),
     // as an RVA. LocateGEngine matches live objects against the class it holds.
@@ -32,9 +28,6 @@ struct BuildProfile {
 
 extern const BuildProfile kSteamProfile_20201114;
 
-/// Fingerprints the host EXE and returns its profile, or nullptr (and logs why)
-/// when no known profile matches. A null result means the mod must stay fully
-/// dormant: no hooks, no threads.
-const BuildProfile* MatchRunningBuild();
+const BuildProfile* MatchRunningBuild(void* module = nullptr);
 
 }  // namespace ueht::builds

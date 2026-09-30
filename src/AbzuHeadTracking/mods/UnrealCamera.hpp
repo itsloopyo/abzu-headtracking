@@ -5,13 +5,14 @@
 
 #include "Mod.hpp"
 #include "builds/build_profile.hpp"
+#include "builds/runtime_discovery.hpp"
 
 namespace ueht {
 
 class HeadTracking;
 
 /// FRotator as Unreal lays it out in memory: { Pitch, Yaw, Roll } floats (deg).
-/// We don't depend on Unreal headers - this matches UE4.x and UE5.x.
+/// Runtime discovery validates the three float members before installing the hook.
 #pragma pack(push, 4)
 struct FRotator {
     float Pitch = 0.0f;
@@ -63,6 +64,7 @@ private:
     /// No-op (and logs) if the slot is unset or out of range.
     bool InstallDecoupledHook(uintptr_t pcm);
 
+    builds::CameraLayout      m_discovered{};
     HeadTracking&             m_tracking;
     const builds::EngineOffsets m_offsets;
     Stage                     m_walkStall = Stage::None;    // last stage the GEngine walk stopped at

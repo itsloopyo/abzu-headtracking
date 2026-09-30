@@ -56,6 +56,10 @@ add_subdirectory(src/AbzuHeadTracking)
 option(ABZU_BUILD_TESTS "Build the behaviour and config tests" ON)
 if(ABZU_BUILD_TESTS)
     enable_testing()
+    add_executable(abzu_discovery_tests tests/runtime_discovery_tests.cpp
+        src/AbzuHeadTracking/builds/runtime_discovery.cpp)
+    target_include_directories(abzu_discovery_tests PRIVATE src/AbzuHeadTracking)
+    add_test(NAME runtime_discovery COMMAND abzu_discovery_tests)
     add_executable(abzuht_lean_tests
         tests/lean_budget_tests.cpp
         src/AbzuHeadTracking/Config.cpp

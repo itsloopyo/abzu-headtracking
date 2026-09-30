@@ -299,8 +299,7 @@ is an unofficial, fan-made modification. It is not affiliated with, endorsed
 by, or sponsored by Giant Squid Studios, 505 Games, Epic Games, or any other
 rights holder. It redistributes no game code, no game assets, and no
 proprietary DLLs, and it requires a legitimately purchased copy of the game.
-Engine structure byte offsets and function addresses referenced in the source
-and in `HeadTracking.ini` were derived by the authors through independent
-analysis of a legitimately owned copy of the game. They are factual
-measurements recorded as numbers; no decompiled or disassembled game code is
-stored in this repository.
+Engine layout measurements, short instruction recognisers and metadata names
+identify camera interfaces in the user's installed game. These are used for
+interoperability. The mod includes no complete game-function bodies, decompiled
+implementations or proprietary libraries.

@@ -143,8 +143,20 @@ void __fastcall UpdateCameraDetour(void* pcm, float dt) {
         if (worldYaw) TryAddDelta (base + off, pose.pitch, pose.yaw, roll);
         else          TryApplyLocal(base + off, pose.pitch, pose.yaw, roll);
     };
+    FRotator before{};
+    if (rotOff) SafeRead(base + rotOff, before);
     injectAt(rotOff);
     injectAt(g_cacheOffset.load(std::memory_order_relaxed));
+    static std::uint64_t nextLog = 0;
+    const auto now = GetTickCount64();
+    if (rotOff && now >= nextLog) {
+        nextLog = now + 5000;
+        FRotator after{};
+        if (SafeRead(base + rotOff, after))
+            UEHT_LOG(Info, "camera: clean=(%.2f,%.2f,%.2f) tracked=(%.2f,%.2f,%.2f) head=(%.2f,%.2f,%.2f)",
+                     before.Pitch, before.Yaw, before.Roll, after.Pitch, after.Yaw, after.Roll,
+                     pose.pitch, pose.yaw, roll);
+    }
 }
 
 uintptr_t HostModuleBase() {
@@ -242,6 +254,11 @@ uintptr_t UnrealCamera::WalkToCameraManager(uintptr_t gengine) {
 // ---------------------------------------------------------------------------
 
 uintptr_t UnrealCamera::ResolveCameraManager() {
+    if (builds::RuntimeDiscoveryActive()) {
+        const auto pcm = builds::ResolveRuntimeCamera(m_discovered);
+        if (pcm) m_pcm.store(pcm, std::memory_order_release);
+        return pcm;
+    }
     const auto gengine = ue::LocateGEngine(m_offsets.uengine_class_rva);
     if (gengine == 0) return 0;
 
@@ -339,7 +356,11 @@ void UnrealCamera::WatchPov(uintptr_t pcm) {
 
 bool UnrealCamera::InstallDecoupledHook(uintptr_t pcm) {
     const auto& cfg = Framework::Get().Cfg();
-    const int slot = cfg.update_camera_slot;
+    const bool discovered = builds::RuntimeDiscoveryActive();
+    const int slot = discovered ? static_cast<int>(m_discovered.slot) : cfg.update_camera_slot;
+    const auto rotation = cfg.pov_offset == 0 ? 0u : discovered ? m_discovered.rotation : cfg.pov_offset;
+    const auto secondary = cfg.cache_offset == 0 ? 0u : discovered ? m_discovered.secondary : cfg.cache_offset;
+    const auto location = cfg.location_offset == 0 ? 0u : discovered ? m_discovered.location : cfg.location_offset;
 
     // This runs every frame until it succeeds, so anything that cannot become
     // true later must stop the retry rather than log again next frame. A bad
@@ -369,10 +390,12 @@ bool UnrealCamera::InstallDecoupledHook(uintptr_t pcm) {
         return false;
     }
 
+    if (discovered && target != HostModuleBase() + m_discovered.target)
+        return abandon("InstallDecoupledHook: camera vtable changed after validation.");
     g_hookTracking = &m_tracking;
-    g_povOffset.store(cfg.pov_offset, std::memory_order_release);
-    g_cacheOffset.store(cfg.cache_offset, std::memory_order_release);
-    g_locationOffset.store(cfg.location_offset, std::memory_order_release);
+    g_povOffset.store(rotation, std::memory_order_release);
+    g_cacheOffset.store(secondary, std::memory_order_release);
+    g_locationOffset.store(location, std::memory_order_release);
 
     using cameraunlock::hooks::HookManager;
     using cameraunlock::hooks::HookStatus;

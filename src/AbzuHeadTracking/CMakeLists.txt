@@ -3,6 +3,8 @@ set(ABZU_DLL_SOURCES
     Framework.cpp
     Mods.cpp
     Config.cpp
+    builds/runtime_discovery.cpp
+    builds/runtime_layout.cpp
     builds/build_registry.cpp
     builds/steam_offsets.cpp
     hooks/D3D11Hook.cpp
